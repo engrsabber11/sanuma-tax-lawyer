@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Field'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
 import { useData } from '../../data/store'
-import { flattenServices } from '../../data/serviceTree'
+import { flattenServices, serviceLabel } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
 import type { Matter, MatterStatus } from '../../data/types'
 import { cn, daysUntil, formatDate, sleep, urgencyFromDays } from '../../lib/utils'
@@ -173,9 +173,9 @@ export function MattersList() {
           </Select>
           <Select className="lg:w-56" value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
             <option value="all">All services</option>
-            {flattenServices(services).map(({ service: s, depth }) => (
+            {flattenServices(services).map(({ service: s }) => (
               <option key={s.id} value={s.id}>
-                {depth > 0 ? `  — ${s.name}` : s.name}
+                {serviceLabel(s, services)}
               </option>
             ))}
           </Select>
@@ -235,7 +235,7 @@ export function MattersList() {
                                 <AlertTriangle className="h-3 w-3 text-warning-600" />
                               </span>
                             )}
-                            {service?.name}
+                            {serviceLabel(service, services)}
                           </p>
                           {m.checklist.length > 0 && (
                             <div className="mt-2.5 flex items-center gap-2">
@@ -383,7 +383,7 @@ export function MattersList() {
                             </span>
                           )}
                         </td>
-                        <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">{service?.name}</td>
+                        <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">{serviceLabel(service, services)}</td>
                         <td className="px-5 py-3.5">
                           <Badge tone="accent">{STATUS_LABEL[m.status]}</Badge>
                         </td>

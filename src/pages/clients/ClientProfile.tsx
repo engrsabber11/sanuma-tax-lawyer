@@ -24,6 +24,7 @@ import { EditClientModal } from '../../components/modals/EditClientModal'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
 import { WalletActionModal } from '../../components/modals/WalletActionModal'
 import { useData } from '../../data/store'
+import { serviceLabel } from '../../data/serviceTree'
 import { formatAED, formatDate, urgencyFromDate } from '../../lib/utils'
 
 export function ClientProfile() {
@@ -256,7 +257,7 @@ export function ClientProfile() {
                   <Briefcase className="h-4 w-4 shrink-0 text-ink-400" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{m.title}</p>
-                    <p className="text-xs text-ink-400">{service?.name} · Opened {formatDate(m.openedAt)}</p>
+                    <p className="text-xs text-ink-400">{serviceLabel(service, services)} · Opened {formatDate(m.openedAt)}</p>
                   </div>
                   <Badge tone="accent">{m.status.replace('-', ' ')}</Badge>
                 </Link>

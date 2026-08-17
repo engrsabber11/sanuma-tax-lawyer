@@ -142,9 +142,9 @@ export const services: Service[] = [
   { id: 'svc-credit-note', name: 'Tax Credit Note Preparation', description: 'FTA-compliant tax credit note drafting and review.', price: 400, vatApplicable: true },
   { id: 'svc-esr-report', name: 'ESR Notification & Report', description: 'Economic Substance Regulations filing support.', price: 1200, vatApplicable: true },
   { id: 'svc-ubo-update', name: 'UBO Declaration Update', description: 'Ultimate Beneficial Owner declaration update.', price: 600, vatApplicable: true },
-  { id: 'svc-vat-reg-doc-prep', parentId: 'svc-vat-reg', name: 'Document Preparation', description: 'Collecting and formatting the FTA registration pack.', price: 400, vatApplicable: true },
-  { id: 'svc-vat-reg-portal', parentId: 'svc-vat-reg', name: 'FTA Portal Submission', description: 'Submitting the registration application on EmaraTax.', price: 500, vatApplicable: true },
-  { id: 'svc-corp-tax-reg-advisory', parentId: 'svc-corp-tax-reg', name: 'Eligibility Advisory', description: 'Assessing Corporate Tax applicability and free zone status.', price: 700, vatApplicable: true },
+  { id: 'svc-vat-reg-doc-prep', parentId: 'svc-vat-reg', name: 'Document Preparation', description: 'Collecting and formatting the FTA registration pack.', price: 1500, vatApplicable: true },
+  { id: 'svc-vat-reg-portal', parentId: 'svc-vat-reg', name: 'FTA Portal Submission', description: 'Submitting the registration application on EmaraTax.', price: 1500, vatApplicable: true },
+  { id: 'svc-corp-tax-reg-advisory', parentId: 'svc-corp-tax-reg', name: 'Eligibility Advisory', description: 'Assessing Corporate Tax applicability and free zone status.', price: 1800, vatApplicable: true },
 ]
 
 export const matters: Matter[] = [

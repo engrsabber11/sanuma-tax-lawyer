@@ -4,7 +4,7 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input, Label, Select, ErrorText } from '../ui/Field'
 import { useData, TODAY } from '../../data/store'
-import { flattenServices } from '../../data/serviceTree'
+import { effectivePrice, flattenServices } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
 import { addDays, cn, formatAED, sleep } from '../../lib/utils'
 import { invoiceSubtotal, invoiceVat } from '../../lib/invoice'
@@ -56,7 +56,7 @@ export function NewInvoiceModal({
 
   const serviceLines: InvoiceLine[] = selected.map((id) => {
     const s = services.find((x) => x.id === id)!
-    return { serviceId: id, description: s.name, qty: 1, unitPrice: s.price, kind: 'service' }
+    return { serviceId: id, description: s.name, qty: 1, unitPrice: effectivePrice(s, services), kind: 'service' }
   })
   const chargeLines: InvoiceLine[] = includedCharges.map((c) => ({
     description: c.description,
@@ -124,7 +124,7 @@ export function NewInvoiceModal({
                   onClick={() => toggle(s.id)}
                   className={cn(
                     'flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors',
-                    depth > 0 ? 'ml-5 bg-ink-50/40 dark:bg-ink-900/30' : 'font-medium',
+                    depth > 0 && 'ml-5',
                     active ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20' : 'border-ink-200 hover:bg-ink-50 dark:border-ink-700 dark:hover:bg-ink-800',
                   )}
                 >
@@ -132,11 +132,10 @@ export function NewInvoiceModal({
                     {active && <Check className="h-3.5 w-3.5" />}
                   </span>
                   <span className="flex-1 flex items-center gap-2 text-ink-700 dark:text-ink-200">
-                    {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 text-ink-400 shrink-0" />}
+                    {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-ink-300 dark:text-ink-600" />}
                     <span>{s.name}</span>
-                    {depth > 0 && <span className="text-[10px] text-ink-400 font-normal">(Sub-service)</span>}
                   </span>
-                  <span className="text-ink-500 dark:text-ink-400 font-normal">{formatAED(s.price)}</span>
+                  <span className="font-normal text-ink-500 dark:text-ink-400">{formatAED(effectivePrice(s, services))}</span>
                 </button>
               )
             })}

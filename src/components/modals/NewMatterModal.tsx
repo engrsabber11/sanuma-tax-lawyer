@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Building2, UserCheck } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input, Label, Select, ErrorText, invalidFieldClass } from '../ui/Field'
 import { useData } from '../../data/store'
-import { flattenServices } from '../../data/serviceTree'
+import { flattenServices, serviceLabel } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
-import { Switch } from '../ui/Switch'
 import { cn, formatAED, sleep } from '../../lib/utils'
 import type { Matter } from '../../data/types'
 
@@ -104,9 +103,9 @@ export function NewMatterModal({
         <div>
           <Label>Service</Label>
           <Select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-            {flattenServices(services).map(({ service: s, depth }) => (
+            {flattenServices(services).map(({ service: s }) => (
               <option key={s.id} value={s.id}>
-                {depth > 0 ? `  ↳ ${s.name} (Sub-service)` : s.name}
+                {serviceLabel(s, services)}
               </option>
             ))}
           </Select>
@@ -116,21 +115,56 @@ export function NewMatterModal({
           <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
         {penaltyApplies && (
-          <div className="rounded-xl border border-ink-200/70 dark:border-ink-800">
-            <div className="flex items-center justify-between px-3.5 py-2.5">
-              <div className="pr-3">
-                <p className="text-sm font-medium text-ink-700 dark:text-ink-200">Client-initiated matter</p>
-                <p className="text-xs text-ink-400">Turn off if the firm opened this matter without the client asking.</p>
-              </div>
-              <Switch checked={clientInitiated} onChange={() => setClientInitiated((v) => !v)} />
+          <div>
+            <Label>Who opened this matter?</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                aria-pressed={clientInitiated}
+                onClick={() => setClientInitiated(true)}
+                className={cn(
+                  'flex flex-col gap-1 rounded-xl border p-3 text-left transition-all',
+                  clientInitiated
+                    ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
+                    : 'border-ink-200 hover:border-accent-300 dark:border-ink-700',
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <UserCheck className={cn('h-4 w-4', clientInitiated ? 'text-accent-600' : 'text-ink-400')} />
+                  <span className="text-sm font-medium text-ink-800 dark:text-ink-100">The client</span>
+                </span>
+                <span className="text-xs text-ink-500 dark:text-ink-400">Requested by the client — no fee</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={!clientInitiated}
+                onClick={() => setClientInitiated(false)}
+                className={cn(
+                  'flex flex-col gap-1 rounded-xl border p-3 text-left transition-all',
+                  !clientInitiated
+                    ? 'border-warning-500 bg-warning-50 dark:bg-warning-900/20'
+                    : 'border-ink-200 hover:border-warning-300 dark:border-ink-700',
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Building2 className={cn('h-4 w-4', !clientInitiated ? 'text-warning-600' : 'text-ink-400')} />
+                  <span className="text-sm font-medium text-ink-800 dark:text-ink-100">The firm</span>
+                </span>
+                <span className="text-xs text-ink-500 dark:text-ink-400">Opened without the client asking</span>
+                <span
+                  className={cn(
+                    'flex items-center gap-1 text-xs font-medium',
+                    !clientInitiated ? 'text-warning-700 dark:text-warning-500' : 'text-ink-400',
+                  )}
+                >
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  {formatAED(penaltyFeeRule.amount)} fee · waivable
+                </span>
+              </button>
             </div>
             {willCharge && (
-              <p className="flex items-start gap-2 border-t border-ink-100 px-3.5 py-2.5 text-xs text-warning-700 dark:border-ink-800 dark:text-warning-500">
-                <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
-                <span>
-                  A minimum penalty fee of <span className="font-semibold">{formatAED(penaltyFeeRule.amount)}</span> will be added to {clientName}'s next
-                  invoice. It can be waived from the matter before it is billed.
-                </span>
+              <p className="mt-2 text-xs text-ink-500 dark:text-ink-400">
+                Added to {clientName}'s next invoice — waivable from the matter until it is billed.
               </p>
             )}
           </div>
