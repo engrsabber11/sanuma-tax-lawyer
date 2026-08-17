@@ -10,6 +10,7 @@ export interface Client {
   whatsapp?: string
   email: string
   referredById?: string
+  subReferredById?: string
   status: 'active' | 'onboarding' | 'inactive'
   createdAt: string
   avatarColor: string
@@ -89,6 +90,10 @@ export interface Matter {
   invoiceId?: string
   notes?: string
   checklist: MatterChecklistItem[]
+  /** False when the firm opened this matter without the client asking — triggers the penalty fee. */
+  clientInitiated: boolean
+  /** The penalty charge raised for this matter, if any. */
+  penaltyChargeId?: string
 }
 
 export interface Service {
@@ -97,6 +102,8 @@ export interface Service {
   description: string
   price: number
   vatApplicable: boolean
+  /** Set when this service is a child of another service. Only one level deep. */
+  parentId?: string
 }
 
 export interface Quote {
@@ -109,10 +116,44 @@ export interface Quote {
 }
 
 export interface InvoiceLine {
-  serviceId: string
+  /** Absent on lines that are not a catalog service, e.g. a penalty fee. */
+  serviceId?: string
   description: string
   qty: number
   unitPrice: number
+  kind?: 'service' | 'penalty'
+  /** Absent means VAT-rated, which is how every catalog service line behaves. */
+  vatApplicable?: boolean
+}
+
+/** Firm-wide rule for the minimum fee charged when a matter is opened without client involvement. */
+export interface PenaltyFeeRule {
+  enabled: boolean
+  amount: number
+  vatApplicable: boolean
+  label: string
+}
+
+export type PendingChargeStatus = 'pending' | 'billed' | 'waived'
+
+/**
+ * A charge raised outside the invoicing flow that waits to be picked up by the
+ * client's next invoice. Amount and VAT are snapshotted so later rule edits
+ * never rewrite what was already raised.
+ */
+export interface PendingCharge {
+  id: string
+  clientId: string
+  matterId?: string
+  kind: 'penalty'
+  description: string
+  amount: number
+  vatApplicable: boolean
+  createdAt: string
+  status: PendingChargeStatus
+  invoiceId?: string
+  waivedReason?: string
+  waivedAt?: string
 }
 
 export interface Invoice {

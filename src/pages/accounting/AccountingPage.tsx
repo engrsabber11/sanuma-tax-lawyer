@@ -8,6 +8,7 @@ import { Tabs } from '../../components/ui/Tabs'
 import { StatCard } from '../../components/ui/StatCard'
 import { useData } from '../../data/store'
 import { formatAED, formatDate } from '../../lib/utils'
+import { invoiceBalanceDue } from '../../lib/invoice'
 import { TrendingUp, TrendingDown, Scale, Receipt } from 'lucide-react'
 
 const PALETTE = ['#279a90', '#f59e0b', '#728079', '#43b6ac', '#dc2626', '#a8e7e1']
@@ -23,8 +24,7 @@ export function AccountingPage() {
   const receivables = invoices
     .filter((i) => i.status !== 'paid')
     .map((i) => {
-      const subtotal = i.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 1.05
-      return { ...i, balance: subtotal - i.paidAmount }
+      return { ...i, balance: invoiceBalanceDue(i) }
     })
 
   const vatCollected = invoices.reduce((s, i) => s + i.lines.reduce((ss, l) => ss + l.qty * l.unitPrice, 0) * 0.05, 0)

@@ -21,9 +21,11 @@ export function ReferralsPage() {
         .map((c) => {
           const tx = walletTransactions.filter((w) => w.clientId === c.id)
           const balance = tx.reduce((s, t) => s + (t.type === 'credit' ? t.amount : -t.amount), 0)
-          const referralCount = clients.filter((r) => r.referredById === c.id).length
+          const directCount = clients.filter((r) => r.referredById === c.id).length
+          const subCount = clients.filter((r) => r.subReferredById === c.id || (r.referredById && clients.find((x) => x.id === r.referredById)?.referredById === c.id)).length
+          const referralCount = directCount + subCount
           const earned = tx.filter((t) => t.type === 'credit').reduce((s, t) => s + t.amount, 0)
-          return { client: c, balance, referralCount, earned }
+          return { client: c, balance, referralCount, directCount, subCount, earned }
         })
         .filter((w) => w.balance !== 0 || w.referralCount > 0),
     [clients, walletTransactions],
@@ -109,7 +111,7 @@ export function ReferralsPage() {
                 </tr>
               </thead>
               <tbody>
-                {wallets.map(({ client, balance, referralCount, earned }) => (
+                {wallets.map(({ client, balance, referralCount, directCount, subCount, earned }) => (
                   <tr key={client.id} className="border-b border-ink-50 last:border-0 dark:border-ink-800/60">
                     <td className="px-5 py-3.5">
                       <Link to={`/clients/${client.id}?tab=wallet`} className="flex items-center gap-2.5 hover:text-accent-600">
@@ -117,7 +119,16 @@ export function ReferralsPage() {
                         <span className="font-medium text-ink-800 dark:text-ink-100">{client.name}</span>
                       </Link>
                     </td>
-                    <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">{referralCount}</td>
+                    <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-ink-800 dark:text-ink-200">{referralCount}</span>
+                        {subCount > 0 && (
+                          <span className="text-xs text-ink-400">
+                            ({directCount} direct · {subCount} sub)
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">{formatAED(earned)}</td>
                     <td className="px-5 py-3.5 font-medium text-ink-800 dark:text-ink-100">{formatAED(balance)}</td>
                   </tr>
@@ -146,7 +157,10 @@ export function ReferralsPage() {
                   <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{w.client.name}</p>
                   <p className="text-xs text-ink-400">{w.client.businessName}</p>
                 </div>
-                <Badge tone="accent">{w.referralCount} referral{w.referralCount !== 1 ? 's' : ''}</Badge>
+                <Badge tone="accent">
+                  {w.referralCount} referral{w.referralCount !== 1 ? 's' : ''}
+                  {w.subCount > 0 ? ` (${w.directCount} direct · ${w.subCount} sub)` : ''}
+                </Badge>
                 <span className="w-24 text-right font-medium text-ink-700 dark:text-ink-200">{formatAED(w.earned)}</span>
               </Link>
             ))}

@@ -5,13 +5,13 @@ import { Input, Label, ErrorText, invalidFieldClass } from '../ui/Field'
 import { useData } from '../../data/store'
 import { useToast } from '../../lib/toast'
 import { cn, formatAED, sleep } from '../../lib/utils'
+import { invoiceBalanceDue } from '../../lib/invoice'
 import type { Invoice } from '../../data/types'
 
 export function RecordPaymentModal({ invoice, open, onClose }: { invoice: Invoice; open: boolean; onClose: () => void }) {
   const { recordPayment } = useData()
   const { show } = useToast()
-  const total = invoice.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 1.05
-  const balanceDue = total - invoice.paidAmount
+  const balanceDue = invoiceBalanceDue(invoice)
   const [amount, setAmount] = useState(balanceDue)
   const [showErrors, setShowErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)

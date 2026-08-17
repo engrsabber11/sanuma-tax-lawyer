@@ -11,12 +11,9 @@ import { NewInvoiceModal } from '../../components/modals/NewInvoiceModal'
 import { useData } from '../../data/store'
 import { useToast } from '../../lib/toast'
 import { formatAED, formatDate } from '../../lib/utils'
+import { invoiceTotal } from '../../lib/invoice'
 import type { Invoice, Quote } from '../../data/types'
 
-function invoiceTotal(inv: Invoice) {
-  const subtotal = inv.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0)
-  return subtotal * 1.05
-}
 
 const quoteStatusTone: Record<Quote['status'], 'neutral' | 'accent' | 'success' | 'danger'> = {
   draft: 'neutral',

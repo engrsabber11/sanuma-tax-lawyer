@@ -12,16 +12,23 @@ const tones: Record<Tone, string> = {
   danger: 'bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-500',
 }
 
+const sizes = {
+  sm: 'px-2 py-0.5 text-[11px] gap-1',
+  md: 'px-2.5 py-1 text-xs gap-1.5',
+}
+
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: Tone
   dot?: boolean
+  size?: keyof typeof sizes
 }
 
-export function Badge({ tone = 'neutral', dot, className, children, ...rest }: BadgeProps) {
+export function Badge({ tone = 'neutral', dot, size = 'md', className, children, ...rest }: BadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap',
+        'inline-flex items-center rounded-full font-medium whitespace-nowrap',
+        sizes[size],
         tones[tone],
         className,
       )}

@@ -5,9 +5,10 @@ import { cn } from '../../lib/utils'
 const fieldClass =
   'w-full rounded-lg border border-ink-200 bg-white px-3.5 h-10 text-sm text-ink-900 placeholder:text-ink-400 outline-none transition-colors focus:border-accent-500 focus:ring-4 focus:ring-accent-500/10 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100'
 
-export function Label({ children, hint }: { children: ReactNode; hint?: string }) {
+/** `hint` sits outside the <label> element, so interactive hints stay out of the field's accessible name. */
+export function Label({ children, hint, className }: { children: ReactNode; hint?: ReactNode; className?: string }) {
   return (
-    <div className="mb-1.5 flex items-baseline justify-between">
+    <div className={cn('mb-1.5 flex items-baseline justify-between gap-2', className)}>
       <label className="text-sm font-medium text-ink-700 dark:text-ink-300">{children}</label>
       {hint && <span className="text-xs text-ink-400">{hint}</span>}
     </div>

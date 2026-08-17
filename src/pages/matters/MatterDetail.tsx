@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Briefcase, Check, FileText, Link2, Plus, Receipt, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Briefcase, Check, FileText, Link2, Plus, Receipt, X } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge, UrgencyBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -13,6 +13,8 @@ import { useData } from '../../data/store'
 import { useToast } from '../../lib/toast'
 import type { MatterStatus } from '../../data/types'
 import { cn, formatAED, formatDate, urgencyFromDate } from '../../lib/utils'
+import { invoiceTotal } from '../../lib/invoice'
+import { WaiveChargeModal } from '../../components/modals/WaiveChargeModal'
 
 const STATUS_FLOW: MatterStatus[] = ['intake', 'documents-collected', 'in-progress', 'submitted', 'completed']
 const STATUS_LABEL: Record<MatterStatus, string> = {
@@ -38,6 +40,7 @@ export function MatterDetail() {
     addMatterChecklistItem,
     removeMatterChecklistItem,
     unlinkDocumentFromMatter,
+    pendingCharges,
   } = useData()
   const { show } = useToast()
   const matter = matters.find((m) => m.id === id)
@@ -45,6 +48,7 @@ export function MatterDetail() {
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
   const [addDocOpen, setAddDocOpen] = useState(false)
   const [linkDocOpen, setLinkDocOpen] = useState(false)
+  const [waiveOpen, setWaiveOpen] = useState(false)
   const [newStep, setNewStep] = useState('')
 
   useEffect(() => {
@@ -61,7 +65,10 @@ export function MatterDetail() {
 
   const client = clients.find((c) => c.id === matter.clientId)
   const service = services.find((s) => s.id === matter.serviceId)
+  const parentService = service?.parentId ? services.find((s) => s.id === service.parentId) : null
   const invoice = invoices.find((i) => i.id === matter.invoiceId)
+  const penaltyCharge = pendingCharges.find((c) => c.id === matter.penaltyChargeId)
+  const penaltyInvoice = penaltyCharge?.invoiceId ? invoices.find((i) => i.id === penaltyCharge.invoiceId) : undefined
   const linkedDocs = clientDocuments.filter((d) => d.matterId === matter.id)
   const currentIndex = STATUS_FLOW.indexOf(matter.status)
   const doneCount = matter.checklist.filter((c) => c.done).length
@@ -83,9 +90,25 @@ export function MatterDetail() {
           <div>
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
               <Briefcase className="h-3.5 w-3.5" /> Matter
+              {!matter.clientInitiated && (
+                <Badge tone="warning">
+                  <AlertTriangle className="h-3 w-3" /> Firm-initiated
+                </Badge>
+              )}
             </div>
             <h1 className="mt-1 text-xl font-semibold text-ink-900 dark:text-ink-50">{matter.title}</h1>
-            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{service?.name} · Opened {formatDate(matter.openedAt)}</p>
+            <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
+              {parentService ? (
+                <>
+                  <span>{parentService.name}</span>
+                  <span className="mx-1 text-ink-300">→</span>
+                  <span className="font-medium text-ink-700 dark:text-ink-300">{service?.name}</span>
+                </>
+              ) : (
+                service?.name
+              )}{' '}
+              · Opened {formatDate(matter.openedAt)}
+            </p>
           </div>
           {client && (
             <Link to={`/clients/${client.id}`} className="flex items-center gap-2.5 rounded-xl border border-ink-200/70 px-3.5 py-2.5 dark:border-ink-800">
@@ -159,7 +182,7 @@ export function MatterDetail() {
                 <Receipt className="h-4 w-4 text-ink-400" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{invoice.number}</p>
-                  <p className="text-xs text-ink-400">{formatAED(invoice.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 1.05)}</p>
+                  <p className="text-xs text-ink-400">{formatAED(invoiceTotal(invoice))}</p>
                 </div>
                 <Badge tone={invoice.status === 'paid' ? 'success' : 'warning'}>{invoice.status}</Badge>
               </Link>
@@ -174,6 +197,43 @@ export function MatterDetail() {
           </CardBody>
         </Card>
       </div>
+
+      {penaltyCharge && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Penalty Fee</CardTitle>
+            <Badge tone={penaltyCharge.status === 'waived' ? 'neutral' : penaltyCharge.status === 'billed' ? 'success' : 'warning'}>
+              {penaltyCharge.status === 'waived' ? 'Waived' : penaltyCharge.status === 'billed' ? 'Billed' : 'Pending'}
+            </Badge>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-ink-800 dark:text-ink-100">
+                {formatAED(penaltyCharge.amount)} · {penaltyCharge.description}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-400">
+                {penaltyCharge.status === 'pending' && `Raised ${formatDate(penaltyCharge.createdAt)} — will be added to the client's next invoice.`}
+                {penaltyCharge.status === 'waived' && `Waived ${penaltyCharge.waivedAt ? formatDate(penaltyCharge.waivedAt) : ''} — ${penaltyCharge.waivedReason}`}
+                {penaltyCharge.status === 'billed' &&
+                  (penaltyInvoice ? `Billed on ${penaltyInvoice.number}.` : 'Billed on an invoice.')}
+              </p>
+            </div>
+            {penaltyCharge.status === 'pending' && (
+              <Button size="sm" variant="secondary" onClick={() => setWaiveOpen(true)}>
+                Waive Fee
+              </Button>
+            )}
+            {penaltyCharge.status === 'billed' && penaltyInvoice && (
+              <Link
+                to={`/sales/invoices/${penaltyInvoice.id}`}
+                className="text-sm font-medium text-accent-600 hover:underline"
+              >
+                View {penaltyInvoice.number}
+              </Link>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -266,6 +326,7 @@ export function MatterDetail() {
       />
       <NewDocumentModal open={addDocOpen} onClose={() => setAddDocOpen(false)} defaultClientId={matter.clientId} defaultMatterId={matter.id} />
       <LinkDocumentModal open={linkDocOpen} onClose={() => setLinkDocOpen(false)} clientId={matter.clientId} matterId={matter.id} />
+      <WaiveChargeModal open={waiveOpen} onClose={() => setWaiveOpen(false)} charge={penaltyCharge} />
     </div>
   )
 }
