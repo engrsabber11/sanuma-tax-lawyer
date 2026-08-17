@@ -11,6 +11,8 @@ import type {
   InvoiceLine,
   LedgerEntry,
   Matter,
+  PenaltyFeeRule,
+  PendingCharge,
   Quote,
   ReferralBonusRule,
   ReminderLogEntry,
@@ -19,6 +21,7 @@ import type {
   WalletTransaction,
 } from './types'
 import { addDays, genId, urgencyFromDate } from '../lib/utils'
+import { invoiceTotal } from '../lib/invoice'
 import { defaultChecklistForService } from './matterChecklists'
 
 export const TODAY = seed.TODAY
@@ -47,6 +50,8 @@ interface DataContextValue {
   ledgerEntries: LedgerEntry[]
   walletTransactions: WalletTransaction[]
   referralBonusRules: ReferralBonusRule[]
+  penaltyFeeRule: PenaltyFeeRule
+  pendingCharges: PendingCharge[]
   firmProfile: FirmProfile
 
   addClient: (input: Omit<Client, 'id' | 'createdAt' | 'avatarColor'> & { avatarColor?: string }) => Client
@@ -57,20 +62,25 @@ interface DataContextValue {
   linkDocumentToMatter: (documentId: string, matterId: string) => void
   unlinkDocumentFromMatter: (documentId: string) => void
 
-  addMatter: (input: { clientId: string; title: string; serviceId: string; dueDate?: string }) => Matter
+  addMatter: (input: { clientId: string; title: string; serviceId: string; dueDate?: string; clientInitiated?: boolean }) => Matter
   updateMatter: (id: string, patch: Partial<Matter>) => void
   toggleMatterChecklistItem: (matterId: string, itemId: string) => void
   addMatterChecklistItem: (matterId: string, label: string) => void
   removeMatterChecklistItem: (matterId: string, itemId: string) => void
 
-  addService: (input: Omit<Service, 'id'>) => void
+  addService: (input: Omit<Service, 'id'>) => Service
   updateService: (id: string, patch: Partial<Service>) => void
+  deleteService: (id: string) => void
 
   addQuote: (input: { clientId: string; serviceIds: string[]; amount: number }) => void
   convertQuoteToInvoice: (quoteId: string) => Invoice | undefined
 
-  addInvoice: (input: { clientId: string; matterId?: string; lines: InvoiceLine[]; dueDate: string }) => Invoice
+  addInvoice: (input: { clientId: string; matterId?: string; lines: InvoiceLine[]; dueDate: string; pendingChargeIds?: string[] }) => Invoice
   recordPayment: (invoiceId: string, amount: number) => void
+
+  updatePenaltyFeeRule: (patch: Partial<PenaltyFeeRule>) => void
+  pendingChargesForClient: (clientId: string) => PendingCharge[]
+  waivePendingCharge: (id: string, reason: string) => void
 
   addCreditNote: (input: { kind: 'firm-issued' | 'client-advisory'; clientId: string; invoiceId?: string; reason: string; amount: number; vatAmount: number }) => void
 
@@ -107,6 +117,8 @@ interface PersistedState {
   ledgerEntries?: LedgerEntry[]
   walletTransactions?: WalletTransaction[]
   referralBonusRules?: ReferralBonusRule[]
+  penaltyFeeRule?: PenaltyFeeRule
+  pendingCharges?: PendingCharge[]
   firmProfile?: FirmProfile
 }
 
@@ -134,8 +146,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeDef[]>(persisted.documentTypes ?? seed.documentTypes)
   const [reminderRules, setReminderRules] = useState<ReminderRule[]>(persisted.reminderRules ?? seed.reminderRules)
   const [reminderLog] = useState<ReminderLogEntry[]>(seed.reminderLog)
+  // State saved before these fields existed is migrated on load: no checklist → empty,
+  // no clientInitiated → treated as client-initiated, so nothing is retro-penalised.
   const [matters, setMattersState] = useState<Matter[]>(
-    (persisted.matters ?? seed.matters).map((m) => ({ ...m, checklist: m.checklist ?? [] })),
+    (persisted.matters ?? seed.matters).map((m) => ({ ...m, checklist: m.checklist ?? [], clientInitiated: m.clientInitiated ?? true })),
   )
   const [services, setServices] = useState<Service[]>(persisted.services ?? seed.services)
   const [quotes, setQuotes] = useState<Quote[]>(persisted.quotes ?? seed.quotes)
@@ -145,6 +159,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>(persisted.ledgerEntries ?? seed.ledgerEntries)
   const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>(persisted.walletTransactions ?? seed.walletTransactions)
   const [referralBonusRules, setReferralBonusRules] = useState<ReferralBonusRule[]>(persisted.referralBonusRules ?? seed.referralBonusRules)
+  const [penaltyFeeRule, setPenaltyFeeRule] = useState<PenaltyFeeRule>(persisted.penaltyFeeRule ?? seed.penaltyFeeRule)
+  const [pendingCharges, setPendingCharges] = useState<PendingCharge[]>(persisted.pendingCharges ?? seed.pendingCharges)
   const [firmProfile, setFirmProfile] = useState<FirmProfile>(
     persisted.firmProfile ?? {
       name: 'Sanuma Tax Advisory FZE',
@@ -170,6 +186,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ledgerEntries,
       walletTransactions,
       referralBonusRules,
+      penaltyFeeRule,
+      pendingCharges,
       firmProfile,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
@@ -187,6 +205,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     ledgerEntries,
     walletTransactions,
     referralBonusRules,
+    penaltyFeeRule,
+    pendingCharges,
     firmProfile,
   ])
 
@@ -232,16 +252,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function addMatter(input: { clientId: string; title: string; serviceId: string; dueDate?: string }) {
+  function addMatter(input: { clientId: string; title: string; serviceId: string; dueDate?: string; clientInitiated?: boolean }) {
+    const clientInitiated = input.clientInitiated ?? true
     const created: Matter = {
       id: genId('m'),
       status: 'intake',
       openedAt: TODAY,
       checklist: defaultChecklistForService(input.serviceId),
       ...input,
+      clientInitiated,
     }
+
+    // Opened without the client asking: raise the firm's minimum fee, snapshotting the
+    // rule as it stands today so later rule edits never rewrite this charge.
+    if (!clientInitiated && penaltyFeeRule.enabled && penaltyFeeRule.amount > 0) {
+      const charge: PendingCharge = {
+        id: genId('pc'),
+        clientId: input.clientId,
+        matterId: created.id,
+        kind: 'penalty',
+        description: penaltyFeeRule.label,
+        amount: penaltyFeeRule.amount,
+        vatApplicable: penaltyFeeRule.vatApplicable,
+        createdAt: TODAY,
+        status: 'pending',
+      }
+      setPendingCharges((prev) => [...prev, charge])
+      created.penaltyChargeId = charge.id
+    }
+
     setMattersState((prev) => [...prev, created])
     return created
+  }
+
+  function updatePenaltyFeeRule(patch: Partial<PenaltyFeeRule>) {
+    setPenaltyFeeRule((prev) => ({ ...prev, ...patch }))
+  }
+
+  function pendingChargesForClient(clientId: string) {
+    return pendingCharges.filter((c) => c.clientId === clientId && c.status === 'pending')
+  }
+
+  function waivePendingCharge(id: string, reason: string) {
+    setPendingCharges((prev) =>
+      prev.map((c) => (c.id === id && c.status === 'pending' ? { ...c, status: 'waived', waivedReason: reason, waivedAt: TODAY } : c)),
+    )
   }
 
   function updateMatter(id: string, patch: Partial<Matter>) {
@@ -276,31 +331,52 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
 
   function addService(input: Omit<Service, 'id'>) {
-    setServices((prev) => [...prev, { id: genId('svc'), ...input }])
+    const created: Service = { id: genId('svc'), ...input }
+    setServices((prev) => [...prev, created])
+    return created
   }
 
   function updateService(id: string, patch: Partial<Service>) {
     setServices((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
   }
 
+  /** Removes the service and, when it is a parent, every sub-service under it. */
+  function deleteService(id: string) {
+    setServices((prev) => prev.filter((s) => s.id !== id && s.parentId !== id))
+  }
+
   function addQuote(input: { clientId: string; serviceIds: string[]; amount: number }) {
     setQuotes((prev) => [...prev, { id: genId('q'), status: 'draft', createdAt: TODAY, ...input }])
   }
 
-  function addInvoice(input: { clientId: string; matterId?: string; lines: InvoiceLine[]; dueDate: string }) {
-    let created!: Invoice
-    setInvoices((prev) => {
-      const nextNum = 1001 + prev.length
-      created = {
-        id: genId('inv'),
-        number: `INV-2026-${nextNum}`,
-        issueDate: TODAY,
-        status: 'unpaid',
-        paidAmount: 0,
-        ...input,
+  function addInvoice(input: { clientId: string; matterId?: string; lines: InvoiceLine[]; dueDate: string; pendingChargeIds?: string[] }) {
+    const { pendingChargeIds, ...invoiceInput } = input
+    // Built outside the updater: StrictMode double-invokes updaters, so generating the id
+    // in there hands callers an id that never reaches state (breaking every back-reference).
+    const created: Invoice = {
+      id: genId('inv'),
+      number: `INV-2026-${1001 + invoices.length}`,
+      issueDate: TODAY,
+      status: 'unpaid',
+      paidAmount: 0,
+      ...invoiceInput,
+    }
+    setInvoices((prev) => [...prev, created])
+
+    // Charges picked up by this invoice stop being pending; ones left out stay in the
+    // queue and resurface on the next invoice for that client.
+    if (pendingChargeIds?.length) {
+      setPendingCharges((prev) =>
+        prev.map((c) => (pendingChargeIds.includes(c.id) && c.status === 'pending' ? { ...c, status: 'billed', invoiceId: created.id } : c)),
+      )
+      const billedTotal = pendingCharges
+        .filter((c) => pendingChargeIds.includes(c.id) && c.status === 'pending')
+        .reduce((sum, c) => sum + c.amount, 0)
+      if (billedTotal > 0) {
+        addLedgerEntry({ date: TODAY, account: 'Penalty Income', description: `${created.number} — firm-initiated matter fees`, debit: 0, credit: billedTotal })
       }
-      return [...prev, created]
-    })
+    }
+
     return created
   }
 
@@ -320,13 +396,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setInvoices((prev) =>
       prev.map((inv) => {
         if (inv.id !== invoiceId) return inv
-        const total = inv.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 1.05
+        const total = invoiceTotal(inv.lines)
         const paidAmount = inv.paidAmount + amount
         const status: Invoice['status'] = paidAmount >= total - 0.01 ? 'paid' : paidAmount > 0 ? 'partial' : inv.status
         return { ...inv, paidAmount, status }
       }),
     )
     addLedgerEntry({ date: TODAY, account: 'Service Revenue', description: `${invoice.number} payment received`, debit: 0, credit: amount })
+
+    const client = clients.find((c) => c.id === invoice.clientId)
+    if (client) {
+      const l1Rule = referralBonusRules.find((r) => r.level === 1 && r.enabled)
+      const l2Rule = referralBonusRules.find((r) => r.level === 2 && r.enabled)
+
+      if (l1Rule && client.referredById) {
+        const l1Bonus = l1Rule.type === 'percentage' ? Math.round((amount * l1Rule.value) / 100) : l1Rule.value
+        if (l1Bonus > 0) {
+          addWalletTransaction({
+            clientId: client.referredById,
+            type: 'credit',
+            reason: `Level 1 Referral Bonus: ${invoice.number} for ${client.name}`,
+            amount: l1Bonus,
+          })
+        }
+      }
+
+      const subReferrerId = client.subReferredById || (client.referredById ? clients.find((c) => c.id === client.referredById)?.referredById : undefined)
+      if (l2Rule && subReferrerId && subReferrerId !== client.referredById) {
+        const l2Bonus = l2Rule.type === 'percentage' ? Math.round((amount * l2Rule.value) / 100) : l2Rule.value
+        if (l2Bonus > 0) {
+          addWalletTransaction({
+            clientId: subReferrerId,
+            type: 'credit',
+            reason: `Level 2 Sub-Referral Bonus: ${invoice.number} for ${client.name}`,
+            amount: l2Bonus,
+          })
+        }
+      }
+    }
   }
 
   function addCreditNote(input: { kind: 'firm-issued' | 'client-advisory'; clientId: string; invoiceId?: string; reason: string; amount: number; vatAmount: number }) {
@@ -393,6 +500,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ledgerEntries,
         walletTransactions,
         referralBonusRules,
+        penaltyFeeRule,
+        pendingCharges,
         firmProfile,
         matters,
         addClient,
@@ -408,10 +517,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         removeMatterChecklistItem,
         addService,
         updateService,
+        deleteService,
         addQuote,
         convertQuoteToInvoice,
         addInvoice,
         recordPayment,
+        updatePenaltyFeeRule,
+        pendingChargesForClient,
+        waivePendingCharge,
         addCreditNote,
         addExpense,
         addWalletTransaction,

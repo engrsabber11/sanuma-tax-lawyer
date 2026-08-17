@@ -8,6 +8,8 @@ import type {
   Invoice,
   LedgerEntry,
   Matter,
+  PenaltyFeeRule,
+  PendingCharge,
   Quote,
   ReferralBonusRule,
   ReminderLogEntry,
@@ -140,19 +142,44 @@ export const services: Service[] = [
   { id: 'svc-credit-note', name: 'Tax Credit Note Preparation', description: 'FTA-compliant tax credit note drafting and review.', price: 400, vatApplicable: true },
   { id: 'svc-esr-report', name: 'ESR Notification & Report', description: 'Economic Substance Regulations filing support.', price: 1200, vatApplicable: true },
   { id: 'svc-ubo-update', name: 'UBO Declaration Update', description: 'Ultimate Beneficial Owner declaration update.', price: 600, vatApplicable: true },
+  { id: 'svc-vat-reg-doc-prep', parentId: 'svc-vat-reg', name: 'Document Preparation', description: 'Collecting and formatting the FTA registration pack.', price: 400, vatApplicable: true },
+  { id: 'svc-vat-reg-portal', parentId: 'svc-vat-reg', name: 'FTA Portal Submission', description: 'Submitting the registration application on EmaraTax.', price: 500, vatApplicable: true },
+  { id: 'svc-corp-tax-reg-advisory', parentId: 'svc-corp-tax-reg', name: 'Eligibility Advisory', description: 'Assessing Corporate Tax applicability and free zone status.', price: 700, vatApplicable: true },
 ]
 
 export const matters: Matter[] = [
-  { id: 'm1', clientId: 'c1', title: 'Trade License Renewal 2026', serviceId: 'svc-trade-license-renewal', status: 'in-progress', openedAt: '2026-07-01', dueDate: '2026-08-01', invoiceId: 'inv-1005', checklist: checklistAt('svc-trade-license-renewal', 2) },
-  { id: 'm2', clientId: 'c2', title: 'VAT Return — June 2026', serviceId: 'svc-vat-return', status: 'submitted', openedAt: '2026-07-05', dueDate: '2026-07-15', invoiceId: 'inv-1003', checklist: checklistAt('svc-vat-return', 5) },
-  { id: 'm3', clientId: 'c3', title: 'Civil Defense NOC Renewal', serviceId: 'svc-trade-license-renewal', status: 'documents-collected', openedAt: '2026-07-10', dueDate: '2026-08-01', checklist: checklistAt('svc-trade-license-renewal', 1) },
-  { id: 'm4', clientId: 'c4', title: 'Trade License + Municipality Permit Renewal', serviceId: 'svc-trade-license-renewal', status: 'intake', openedAt: '2026-07-18', dueDate: '2026-08-05', checklist: checklistAt('svc-trade-license-renewal', 0) },
-  { id: 'm5', clientId: 'c5', title: 'VAT Return — Q2 2026', serviceId: 'svc-vat-return', status: 'in-progress', openedAt: '2026-07-12', dueDate: '2026-07-28', checklist: checklistAt('svc-vat-return', 2) },
-  { id: 'm6', clientId: 'c6', title: 'Corporate Tax Registration', serviceId: 'svc-corp-tax-reg', status: 'completed', openedAt: '2026-05-01', dueDate: '2026-06-01', completedAt: '2026-06-05', invoiceId: 'inv-1001', checklist: checklistAt('svc-corp-tax-reg', 4) },
-  { id: 'm7', clientId: 'c8', title: 'ESR Notification 2026', serviceId: 'svc-esr-report', status: 'in-progress', openedAt: '2026-07-08', dueDate: '2026-08-30', checklist: checklistAt('svc-esr-report', 2) },
-  { id: 'm8', clientId: 'c9', title: 'VAT Registration', serviceId: 'svc-vat-reg', status: 'completed', openedAt: '2026-07-09', dueDate: '2026-07-20', completedAt: '2026-07-20', invoiceId: 'inv-1002', checklist: checklistAt('svc-vat-reg', 5) },
-  { id: 'm9', clientId: 'c1', title: 'Credit Note for Discounted Renewal Fee', serviceId: 'svc-credit-note', status: 'completed', openedAt: '2026-06-15', dueDate: '2026-06-20', completedAt: '2026-06-22', invoiceId: 'inv-1004', checklist: checklistAt('svc-credit-note', 4) },
-  { id: 'm10', clientId: 'c7', title: 'Trade License Renewal 2026', serviceId: 'svc-trade-license-renewal', status: 'intake', openedAt: '2026-07-19', dueDate: '2026-08-10', checklist: checklistAt('svc-trade-license-renewal', 0) },
+  { id: 'm1', clientId: 'c1', title: 'Trade License Renewal 2026', serviceId: 'svc-trade-license-renewal', status: 'in-progress', openedAt: '2026-07-01', dueDate: '2026-08-01', invoiceId: 'inv-1005', clientInitiated: true, checklist: checklistAt('svc-trade-license-renewal', 2) },
+  { id: 'm2', clientId: 'c2', title: 'VAT Return — June 2026', serviceId: 'svc-vat-return', status: 'submitted', openedAt: '2026-07-05', dueDate: '2026-07-15', invoiceId: 'inv-1003', clientInitiated: true, checklist: checklistAt('svc-vat-return', 5) },
+  { id: 'm3', clientId: 'c3', title: 'Civil Defense NOC Renewal', serviceId: 'svc-trade-license-renewal', status: 'documents-collected', openedAt: '2026-07-10', dueDate: '2026-08-01', clientInitiated: true, checklist: checklistAt('svc-trade-license-renewal', 1) },
+  { id: 'm4', clientId: 'c4', title: 'Trade License + Municipality Permit Renewal', serviceId: 'svc-trade-license-renewal', status: 'intake', openedAt: '2026-07-18', dueDate: '2026-08-05', clientInitiated: true, checklist: checklistAt('svc-trade-license-renewal', 0) },
+  { id: 'm5', clientId: 'c5', title: 'VAT Return — Q2 2026', serviceId: 'svc-vat-return', status: 'in-progress', openedAt: '2026-07-12', dueDate: '2026-07-28', clientInitiated: true, checklist: checklistAt('svc-vat-return', 2) },
+  { id: 'm6', clientId: 'c6', title: 'Corporate Tax Registration', serviceId: 'svc-corp-tax-reg', status: 'completed', openedAt: '2026-05-01', dueDate: '2026-06-01', completedAt: '2026-06-05', invoiceId: 'inv-1001', clientInitiated: true, checklist: checklistAt('svc-corp-tax-reg', 4) },
+  { id: 'm7', clientId: 'c8', title: 'ESR Notification 2026', serviceId: 'svc-esr-report', status: 'in-progress', openedAt: '2026-07-08', dueDate: '2026-08-30', clientInitiated: true, checklist: checklistAt('svc-esr-report', 2) },
+  { id: 'm8', clientId: 'c9', title: 'VAT Registration', serviceId: 'svc-vat-reg', status: 'completed', openedAt: '2026-07-09', dueDate: '2026-07-20', completedAt: '2026-07-20', invoiceId: 'inv-1002', clientInitiated: true, checklist: checklistAt('svc-vat-reg', 5) },
+  { id: 'm9', clientId: 'c1', title: 'Credit Note for Discounted Renewal Fee', serviceId: 'svc-credit-note', status: 'completed', openedAt: '2026-06-15', dueDate: '2026-06-20', completedAt: '2026-06-22', invoiceId: 'inv-1004', clientInitiated: true, checklist: checklistAt('svc-credit-note', 4) },
+  { id: 'm10', clientId: 'c7', title: 'Trade License Renewal 2026', serviceId: 'svc-trade-license-renewal', status: 'intake', openedAt: '2026-07-19', dueDate: '2026-08-10', clientInitiated: true, checklist: checklistAt('svc-trade-license-renewal', 0) },
+  { id: 'm11', clientId: 'c3', title: 'UBO Declaration Update — filed on client behalf', serviceId: 'svc-ubo-update', status: 'in-progress', openedAt: '2026-07-20', dueDate: '2026-08-15', clientInitiated: false, penaltyChargeId: 'pc-1', checklist: checklistAt('svc-ubo-update', 1) },
+]
+
+export const penaltyFeeRule: PenaltyFeeRule = {
+  enabled: true,
+  amount: 250,
+  vatApplicable: true,
+  label: 'Minimum engagement fee — firm-initiated matter',
+}
+
+export const pendingCharges: PendingCharge[] = [
+  {
+    id: 'pc-1',
+    clientId: 'c3',
+    matterId: 'm11',
+    kind: 'penalty',
+    description: 'Minimum engagement fee — firm-initiated matter',
+    amount: 250,
+    vatApplicable: true,
+    createdAt: '2026-07-20',
+    status: 'pending',
+  },
 ]
 
 export const quotes: Quote[] = [

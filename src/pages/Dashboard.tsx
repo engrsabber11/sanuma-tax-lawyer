@@ -15,6 +15,7 @@ import { Badge, UrgencyBadge } from '../components/ui/Badge'
 import { Avatar } from '../components/ui/Avatar'
 import { useData } from '../data/store'
 import { daysUntil, formatAED, formatDate, urgencyFromDate, urgencyFromDays } from '../lib/utils'
+import { invoiceBalanceDue } from '../lib/invoice'
 
 const revenueTrend = [
   { month: 'Feb', revenue: 8200, expense: 11200 },
@@ -40,10 +41,7 @@ export function Dashboard() {
     .sort((a, b) => a.days - b.days)
 
   const outstandingInvoices = invoices.filter((i) => i.status !== 'paid')
-  const outstandingTotal = outstandingInvoices.reduce(
-    (sum, i) => sum + (i.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 1.05 - i.paidAmount),
-    0,
-  )
+  const outstandingTotal = outstandingInvoices.reduce((sum, i) => sum + invoiceBalanceDue(i), 0)
 
   const monthRevenue = invoices
     .filter((i) => i.issueDate.startsWith('2026-07'))

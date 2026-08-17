@@ -18,7 +18,9 @@ import {
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
-import { Input, Label } from '../../components/ui/Field'
+import { ErrorText, Input, Label, invalidFieldClass } from '../../components/ui/Field'
+import { PhoneInput } from '../../components/ui/PhoneInput'
+import { isUaeMobile, UAE_MOBILE_PLACEHOLDER } from '../../lib/phone'
 import { Stepper } from '../../components/ui/Stepper'
 import { Avatar } from '../../components/ui/Avatar'
 import { Badge } from '../../components/ui/Badge'
@@ -71,6 +73,7 @@ interface DraftState {
   phone: string
   email: string
   referrerId: string | null
+  subReferrerId: string | null
   businessType: BusinessType | null
   checkedDocs: string[]
 }
@@ -82,13 +85,14 @@ const emptyDraft: DraftState = {
   phone: '',
   email: '',
   referrerId: null,
+  subReferrerId: null,
   businessType: null,
   checkedDocs: [],
 }
 
 export function ClientOnboarding() {
   const navigate = useNavigate()
-  const { clients, documentTypes, addClient } = useData()
+  const { clients, documentTypes, referralBonusRules, addClient } = useData()
   const { show } = useToast()
   const [draft, setDraft] = useState<DraftState>(() => {
     const saved = localStorage.getItem(DRAFT_KEY)
@@ -97,6 +101,8 @@ export function ClientOnboarding() {
   const [resumed] = useState(() => !!localStorage.getItem(DRAFT_KEY))
   const [referrerQuery, setReferrerQuery] = useState('')
   const [showReferrerSearch, setShowReferrerSearch] = useState(false)
+  const [subReferrerQuery, setSubReferrerQuery] = useState('')
+  const [showSubReferrerSearch, setShowSubReferrerSearch] = useState(false)
   const [done, setDone] = useState(false)
   const [newClientId, setNewClientId] = useState<string | null>(null)
   const [dir, setDir] = useState(1)
@@ -106,19 +112,50 @@ export function ClientOnboarding() {
   }, [draft, done])
 
   const referrer = clients.find((c) => c.id === draft.referrerId) ?? null
-  const chain = useMemo(() => {
-    const result: string[] = []
-    let current = clients.find((c) => c.id === draft.referrerId)
-    while (current) {
-      result.unshift(current.name)
-      current = clients.find((c) => c.id === current?.referredById)
-    }
-    return result
+  const subReferrer = clients.find((c) => c.id === draft.subReferrerId) ?? null
+
+  // Downline of the primary referrer for quick one-click sub-referral assignment
+  const referrerDownline = useMemo(() => {
+    if (!draft.referrerId) return []
+    return clients.filter((c) => c.referredById === draft.referrerId)
   }, [draft.referrerId, clients])
 
+  // Full multi-level referral chain
+  const chain = useMemo(() => {
+    const nodes: { id: string; name: string; levelLabel: string; role: 'referrer' | 'sub-referrer' | 'upline' }[] = []
+
+    if (referrer) {
+      let cur = clients.find((c) => c.id === referrer.referredById)
+      const uplines: typeof nodes = []
+      while (cur) {
+        uplines.unshift({ id: cur.id, name: cur.name, levelLabel: 'Upline', role: 'upline' })
+        cur = clients.find((c) => c.id === cur?.referredById)
+      }
+      nodes.push(...uplines)
+      nodes.push({ id: referrer.id, name: referrer.name, levelLabel: 'Level 1 (Direct)', role: 'referrer' })
+    }
+
+    if (subReferrer && subReferrer.id !== referrer?.id) {
+      nodes.push({ id: subReferrer.id, name: subReferrer.name, levelLabel: 'Level 2 (Sub-Ref)', role: 'sub-referrer' })
+    }
+
+    return nodes
+  }, [referrer, subReferrer, clients])
+
   const referrerResults = referrerQuery
-    ? clients.filter((c) => (c.name + (c.businessName ?? '')).toLowerCase().includes(referrerQuery.toLowerCase())).slice(0, 5)
-    : clients.slice(0, 5)
+    ? clients
+        .filter((c) => c.id !== draft.subReferrerId && (c.name + (c.businessName ?? '')).toLowerCase().includes(referrerQuery.toLowerCase()))
+        .slice(0, 5)
+    : clients.filter((c) => c.id !== draft.subReferrerId).slice(0, 5)
+
+  const subReferrerResults = subReferrerQuery
+    ? clients
+        .filter((c) => c.id !== draft.referrerId && (c.name + (c.businessName ?? '')).toLowerCase().includes(subReferrerQuery.toLowerCase()))
+        .slice(0, 5)
+    : clients.filter((c) => c.id !== draft.referrerId).slice(0, 5)
+
+  const l1Rule = referralBonusRules.find((r) => r.level === 1)
+  const l2Rule = referralBonusRules.find((r) => r.level === 2)
 
   const selectedType = businessTypes.find((t) => t.id === draft.businessType)
 
@@ -140,6 +177,7 @@ export function ClientOnboarding() {
       whatsapp: draft.phone || undefined,
       email: draft.email || `${draft.name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
       referredById: draft.referrerId ?? undefined,
+      subReferredById: draft.subReferrerId ?? undefined,
       status: 'active',
     })
     setNewClientId(created.id)
@@ -155,7 +193,8 @@ export function ClientOnboarding() {
     setDone(false)
   }
 
-  const canProceed = [!!draft.name && !!draft.phone, true, !!draft.businessType, true][draft.step]
+  const phoneValid = isUaeMobile(draft.phone)
+  const canProceed = [!!draft.name && phoneValid, true, !!draft.businessType, true][draft.step]
 
   if (done) {
     const suggested = selectedType?.checklist.filter((id) => !draft.checkedDocs.includes(id)) ?? []
@@ -172,7 +211,13 @@ export function ClientOnboarding() {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
           <h1 className="mt-5 text-xl font-semibold text-ink-900 dark:text-ink-50">{draft.name} is onboarded 🎉</h1>
           <p className="mt-1.5 text-sm text-ink-500 dark:text-ink-400">
-            {referrer ? `Linked under ${referrer.name}'s referral chain.` : 'Added as a direct client.'}
+            {referrer && subReferrer
+              ? `Linked under ${referrer.name} (Direct) & ${subReferrer.name} (Sub-referred).`
+              : referrer
+                ? `Linked under ${referrer.name}'s referral chain.`
+                : subReferrer
+                  ? `Sub-referred by ${subReferrer.name}.`
+                  : 'Added as a direct client.'}
           </p>
         </motion.div>
 
@@ -248,7 +293,12 @@ export function ClientOnboarding() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <Label>Phone / WhatsApp *</Label>
-                      <Input placeholder="+971 50 000 0000" value={draft.phone} onChange={(e) => update({ phone: e.target.value })} />
+                      <PhoneInput
+                        value={draft.phone}
+                        onChange={(phone) => update({ phone })}
+                        className={cn(draft.phone && !phoneValid && invalidFieldClass)}
+                      />
+                      {draft.phone && !phoneValid && <ErrorText>Use a UAE mobile number, e.g. {UAE_MOBILE_PLACEHOLDER}</ErrorText>}
                     </div>
                     <div>
                       <Label hint="optional">Email</Label>
@@ -259,71 +309,212 @@ export function ClientOnboarding() {
               )}
 
               {draft.step === 1 && (
-                <div className="flex flex-col gap-4">
-                  <p className="text-sm text-ink-500 dark:text-ink-400">Was this client referred by an existing client? Skip if not.</p>
-                  {referrer ? (
-                    <div className="flex items-center gap-3 rounded-xl border border-accent-200 bg-accent-50 p-4 dark:border-accent-800 dark:bg-accent-900/20">
-                      <Avatar name={referrer.name} color={referrer.avatarColor} />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-ink-800 dark:text-ink-100">{referrer.name}</p>
-                        <p className="text-xs text-ink-500 dark:text-ink-400">{referrer.businessName}</p>
-                      </div>
-                      <button
-                        onClick={() => update({ referrerId: null })}
-                        className="rounded-lg p-1.5 text-ink-400 hover:bg-white/60 dark:hover:bg-ink-800"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-                      <Input
-                        placeholder="Search existing clients by name…"
-                        className="pl-9"
-                        value={referrerQuery}
-                        onFocus={() => setShowReferrerSearch(true)}
-                        onChange={(e) => {
-                          setReferrerQuery(e.target.value)
-                          setShowReferrerSearch(true)
-                        }}
-                      />
-                      {showReferrerSearch && (
-                        <div className="absolute z-10 mt-1.5 w-full overflow-hidden rounded-xl border border-ink-200/70 bg-white shadow-[var(--shadow-popover)] dark:border-ink-800 dark:bg-ink-900">
-                          {referrerResults.map((c) => (
-                            <button
-                              key={c.id}
-                              onClick={() => {
-                                update({ referrerId: c.id })
-                                setShowReferrerSearch(false)
-                                setReferrerQuery('')
-                              }}
-                              className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800"
-                            >
-                              <Avatar name={c.name} color={c.avatarColor} size="sm" />
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-ink-800 dark:text-ink-100">{c.name}</p>
-                                <p className="truncate text-xs text-ink-400">{c.businessName}</p>
-                              </div>
-                            </button>
-                          ))}
-                          {referrerResults.length === 0 && <p className="px-3.5 py-3 text-sm text-ink-400">No matches</p>}
-                        </div>
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <p className="text-sm font-medium text-ink-800 dark:text-ink-200">Referral &amp; Multi-Level Network</p>
+                    <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">
+                      Link this client to a Direct Referrer (Level 1) and an optional Sub-Referrer (Level 2). Skip if direct.
+                    </p>
+                  </div>
+
+                  {/* Level 1: Primary Referrer */}
+                  <div className="flex flex-col gap-2 rounded-xl border border-ink-200/70 p-4 dark:border-ink-800 bg-ink-50/40 dark:bg-ink-900/40">
+                    <div className="flex items-center justify-between">
+                      <Label className="mb-0 flex items-center gap-2">
+                        <span>Primary Referrer</span>
+                        <Badge tone="accent" size="sm">Level 1 (Direct)</Badge>
+                      </Label>
+                      {l1Rule?.enabled && (
+                        <span className="text-[11px] font-medium text-accent-600 dark:text-accent-400">
+                          Bonus: {l1Rule.type === 'percentage' ? `${l1Rule.value}%` : `AED ${l1Rule.value}`}
+                        </span>
                       )}
                     </div>
-                  )}
 
-                  {referrer && chain.length > 0 && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="rounded-xl bg-ink-50 p-4 dark:bg-ink-800/60">
-                      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-ink-400">Where this client will sit</p>
-                      <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                        {chain.map((name, i) => (
-                          <span key={name} className="flex items-center gap-1.5">
-                            <Badge tone={i === chain.length - 1 ? 'accent' : 'neutral'}>{name}</Badge>
-                            <ChevronRight className="h-3.5 w-3.5 text-ink-300" />
+                    {referrer ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-accent-200 bg-accent-50/80 p-3 dark:border-accent-800/80 dark:bg-accent-900/20">
+                        <Avatar name={referrer.name} color={referrer.avatarColor} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm text-ink-900 dark:text-ink-100">{referrer.name}</p>
+                          <p className="text-xs text-ink-500 dark:text-ink-400">{referrer.businessName ?? referrer.phone}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => update({ referrerId: null })}
+                          className="rounded-lg p-1.5 text-ink-400 hover:bg-white/80 hover:text-ink-700 dark:hover:bg-ink-800 dark:hover:text-ink-200"
+                          title="Remove Primary Referrer"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                        <Input
+                          placeholder="Search existing client by name or business…"
+                          className="pl-9 bg-white dark:bg-ink-900"
+                          value={referrerQuery}
+                          onFocus={() => setShowReferrerSearch(true)}
+                          onChange={(e) => {
+                            setReferrerQuery(e.target.value)
+                            setShowReferrerSearch(true)
+                          }}
+                        />
+                        {showReferrerSearch && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setShowReferrerSearch(false)} />
+                            <div className="absolute z-20 mt-1.5 w-full overflow-hidden rounded-xl border border-ink-200/80 bg-white shadow-[var(--shadow-popover)] dark:border-ink-800 dark:bg-ink-900">
+                              {referrerResults.map((c) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    update({ referrerId: c.id })
+                                    setShowReferrerSearch(false)
+                                    setReferrerQuery('')
+                                  }}
+                                  className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800"
+                                >
+                                  <Avatar name={c.name} color={c.avatarColor} size="sm" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate font-medium text-ink-800 dark:text-ink-100">{c.name}</p>
+                                    <p className="truncate text-xs text-ink-400">{c.businessName ?? c.phone}</p>
+                                  </div>
+                                </button>
+                              ))}
+                              {referrerResults.length === 0 && <p className="px-3.5 py-3 text-sm text-ink-400">No matching clients</p>}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Level 2: Sub-Referrer */}
+                  <div className="flex flex-col gap-2 rounded-xl border border-ink-200/70 p-4 dark:border-ink-800 bg-ink-50/40 dark:bg-ink-900/40">
+                    <div className="flex items-center justify-between">
+                      <Label className="mb-0 flex items-center gap-2">
+                        <span>Sub-Referrer</span>
+                        <Badge tone="neutral" size="sm">Level 2 (Sub-referred by)</Badge>
+                      </Label>
+                      {l2Rule?.enabled && (
+                        <span className="text-[11px] font-medium text-ink-500 dark:text-ink-400">
+                          Bonus: {l2Rule.type === 'percentage' ? `${l2Rule.value}%` : `AED ${l2Rule.value}`}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick chips if primary referrer has clients in their network */}
+                    {referrer && referrerDownline.length > 0 && !subReferrer && (
+                      <div className="mb-1">
+                        <p className="text-[11px] font-medium text-ink-400 mb-1.5">
+                          Suggested from {referrer.name}&apos;s network:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {referrerDownline.slice(0, 4).map((d) => (
+                            <button
+                              key={d.id}
+                              type="button"
+                              onClick={() => update({ subReferrerId: d.id })}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200/80 bg-white px-2.5 py-1 text-xs text-ink-700 hover:border-accent-300 hover:bg-accent-50/50 dark:border-ink-700 dark:bg-ink-800 dark:text-ink-200"
+                            >
+                              <Avatar name={d.name} color={d.avatarColor} size="xs" />
+                              <span className="truncate max-w-32">{d.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {subReferrer ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-ink-300 bg-white p-3 dark:border-ink-700 dark:bg-ink-800/80">
+                        <Avatar name={subReferrer.name} color={subReferrer.avatarColor} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm text-ink-900 dark:text-ink-100">{subReferrer.name}</p>
+                          <p className="text-xs text-ink-500 dark:text-ink-400">{subReferrer.businessName ?? subReferrer.phone}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => update({ subReferrerId: null })}
+                          className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-ink-700 dark:hover:text-ink-200"
+                          title="Remove Sub-Referrer"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                        <Input
+                          placeholder="Search or pick sub-referrer (optional)…"
+                          className="pl-9 bg-white dark:bg-ink-900"
+                          value={subReferrerQuery}
+                          onFocus={() => setShowSubReferrerSearch(true)}
+                          onChange={(e) => {
+                            setSubReferrerQuery(e.target.value)
+                            setShowSubReferrerSearch(true)
+                          }}
+                        />
+                        {showSubReferrerSearch && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setShowSubReferrerSearch(false)} />
+                            <div className="absolute z-20 mt-1.5 w-full overflow-hidden rounded-xl border border-ink-200/80 bg-white shadow-[var(--shadow-popover)] dark:border-ink-800 dark:bg-ink-900">
+                              {subReferrerResults.map((c) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    update({ subReferrerId: c.id })
+                                    setShowSubReferrerSearch(false)
+                                    setSubReferrerQuery('')
+                                  }}
+                                  className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800"
+                                >
+                                  <Avatar name={c.name} color={c.avatarColor} size="sm" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate font-medium text-ink-800 dark:text-ink-100">{c.name}</p>
+                                    <p className="truncate text-xs text-ink-400">{c.businessName ?? c.phone}</p>
+                                  </div>
+                                </button>
+                              ))}
+                              {subReferrerResults.length === 0 && <p className="px-3.5 py-3 text-sm text-ink-400">No matching clients</p>}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Multi-Level Referral Hierarchy Chain Preview */}
+                  {(referrer || subReferrer) && chain.length > 0 && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="rounded-xl bg-ink-100/70 p-4 dark:bg-ink-800/60 border border-ink-200/60 dark:border-ink-700/60">
+                      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                        Multi-Level Referral Hierarchy
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        {chain.map((item) => (
+                          <span key={item.id} className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-ink-800 shadow-sm dark:bg-ink-900 dark:text-ink-100 border border-ink-200 dark:border-ink-700">
+                              <span>{item.name}</span>
+                              <span className="text-[10px] text-ink-400">({item.levelLabel})</span>
+                            </span>
+                            <ChevronRight className="h-3.5 w-3.5 text-ink-400" />
                           </span>
                         ))}
                         <Badge tone="success">{draft.name || 'New Client'}</Badge>
+                      </div>
+
+                      <div className="mt-3.5 pt-3 border-t border-ink-200/60 dark:border-ink-700/60 flex flex-wrap gap-4 text-xs text-ink-500 dark:text-ink-400">
+                        {referrer && l1Rule?.enabled && (
+                          <span>
+                            • <strong className="text-ink-700 dark:text-ink-200">{referrer.name}</strong> will receive Level 1 bonus ({l1Rule.type === 'percentage' ? `${l1Rule.value}%` : `AED ${l1Rule.value}`})
+                          </span>
+                        )}
+                        {subReferrer && l2Rule?.enabled && (
+                          <span>
+                            • <strong className="text-ink-700 dark:text-ink-200">{subReferrer.name}</strong> will receive Level 2 bonus ({l2Rule.type === 'percentage' ? `${l2Rule.value}%` : `AED ${l2Rule.value}`})
+                          </span>
+                        )}
                       </div>
                     </motion.div>
                   )}
@@ -414,7 +605,7 @@ export function ClientOnboarding() {
                     Skip
                   </Button>
                 )}
-                <span title={!canProceed ? 'Enter a name and phone number to continue' : undefined}>
+                <span title={!canProceed ? 'Enter a name and a valid UAE mobile number to continue' : undefined}>
                   <Button onClick={() => goto(draft.step + 1)} disabled={!canProceed} icon={<ArrowRight className="h-4 w-4" />}>
                     Continue
                   </Button>

@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { RecordPaymentModal } from '../../components/modals/RecordPaymentModal'
 import { useData } from '../../data/store'
 import { formatAED, formatDate } from '../../lib/utils'
+import { invoiceSubtotal, invoiceVat } from '../../lib/invoice'
 
 export function InvoiceDetail() {
   const { id } = useParams()
@@ -25,8 +26,8 @@ export function InvoiceDetail() {
 
   const client = clients.find((c) => c.id === invoice.clientId)
   const matter = matters.find((m) => m.id === invoice.matterId)
-  const subtotal = invoice.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0)
-  const vat = subtotal * 0.05
+  const subtotal = invoiceSubtotal(invoice.lines)
+  const vat = invoiceVat(invoice.lines)
   const total = subtotal + vat
   const balanceDue = total - invoice.paidAmount
 
@@ -102,7 +103,13 @@ export function InvoiceDetail() {
           <tbody>
             {invoice.lines.map((l, i) => (
               <tr key={i} className="border-b border-ink-50 dark:border-ink-800/60">
-                <td className="py-3 text-ink-700 dark:text-ink-200">{l.description}</td>
+                <td className="py-3 text-ink-700 dark:text-ink-200">
+                  <span className="flex items-center gap-2">
+                    {l.description}
+                    {l.kind === 'penalty' && <Badge tone="warning">Penalty</Badge>}
+                    {l.vatApplicable === false && <span className="text-xs text-ink-400">VAT exempt</span>}
+                  </span>
+                </td>
                 <td className="py-3 text-right text-ink-500 dark:text-ink-400">{l.qty}</td>
                 <td className="py-3 text-right text-ink-500 dark:text-ink-400">{formatAED(l.unitPrice)}</td>
                 <td className="py-3 text-right font-medium text-ink-800 dark:text-ink-100">{formatAED(l.qty * l.unitPrice)}</td>

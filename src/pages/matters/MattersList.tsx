@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Field'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
 import { useData } from '../../data/store'
+import { flattenServices } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
 import type { Matter, MatterStatus } from '../../data/types'
 import { cn, daysUntil, formatDate, sleep, urgencyFromDays } from '../../lib/utils'
@@ -172,9 +173,9 @@ export function MattersList() {
           </Select>
           <Select className="lg:w-56" value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}>
             <option value="all">All services</option>
-            {services.map((s) => (
+            {flattenServices(services).map(({ service: s, depth }) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {depth > 0 ? `  — ${s.name}` : s.name}
               </option>
             ))}
           </Select>
@@ -228,7 +229,14 @@ export function MattersList() {
                       <Link key={m.id} to={`/matters/${m.id}`}>
                         <Card className="p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card-hover)]">
                           <p className="text-sm font-medium leading-snug text-ink-800 dark:text-ink-100">{m.title}</p>
-                          <p className="mt-1 text-xs text-ink-400">{service?.name}</p>
+                          <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-400">
+                            {!m.clientInitiated && (
+                              <span title="Firm-initiated — penalty fee applied" className="flex shrink-0">
+                                <AlertTriangle className="h-3 w-3 text-warning-600" />
+                              </span>
+                            )}
+                            {service?.name}
+                          </p>
                           {m.checklist.length > 0 && (
                             <div className="mt-2.5 flex items-center gap-2">
                               <div className="h-1.5 flex-1 rounded-full bg-ink-100 dark:bg-ink-800">
@@ -357,7 +365,16 @@ export function MattersList() {
                               {selected && <Check className="h-3.5 w-3.5" />}
                             </button>
                           </td>
-                          <td className="px-5 py-3.5 font-medium text-ink-800 dark:text-ink-100">{m.title}</td>
+                          <td className="px-5 py-3.5 font-medium text-ink-800 dark:text-ink-100">
+                            <span className="flex items-center gap-2">
+                              {m.title}
+                              {!m.clientInitiated && (
+                                <Badge tone="warning">
+                                  <AlertTriangle className="h-3 w-3" /> Firm-initiated
+                                </Badge>
+                              )}
+                            </span>
+                          </td>
                         <td className="px-5 py-3.5">
                           {client && (
                             <span className="flex items-center gap-2.5">
