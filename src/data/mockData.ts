@@ -1,0 +1,224 @@
+import type {
+  Client,
+  ClientDocument,
+  ComplianceDeadline,
+  CreditNote,
+  DocumentTypeDef,
+  Expense,
+  Invoice,
+  LedgerEntry,
+  Matter,
+  Quote,
+  ReferralBonusRule,
+  ReminderLogEntry,
+  ReminderRule,
+  Service,
+  WalletTransaction,
+} from './types'
+import { defaultChecklistForService } from './matterChecklists'
+
+export const TODAY = '2026-07-21'
+
+function checklistAt(serviceId: string, doneCount: number) {
+  return defaultChecklistForService(serviceId).map((item, i) => ({ ...item, done: i < doneCount }))
+}
+
+export const documentTypes: DocumentTypeDef[] = [
+  { id: 'dt-eid', name: 'Emirates ID', category: 'personal', hasExpiry: true, defaultReminderDays: [60, 30, 7], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-passport', name: 'Passport', category: 'personal', hasExpiry: true, defaultReminderDays: [90, 30], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-visa', name: 'Residence Visa', category: 'personal', hasExpiry: true, defaultReminderDays: [90, 30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-labor', name: 'Labor / Establishment Card', category: 'personal', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp'] },
+  { id: 'dt-trade-license', name: 'Trade License', category: 'business', hasExpiry: true, defaultReminderDays: [60, 30, 7], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-chamber', name: 'Chamber of Commerce Certificate', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-municipality-permit', name: 'Municipality Trade/Food Permit', category: 'business', hasExpiry: true, defaultReminderDays: [45, 14], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-civil-defense', name: 'Civil Defense / Fire Safety NOC', category: 'business', hasExpiry: true, defaultReminderDays: [45, 14], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-ejari', name: 'Ejari (Tenancy Contract)', category: 'business', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp'] },
+  { id: 'dt-signage', name: 'Signage / Advertisement Permit', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-customs', name: 'Import/Export Customs Code', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-vat-cert', name: 'VAT Registration Certificate (TRN)', category: 'tax', hasExpiry: false, defaultReminderDays: [], defaultChannels: [] },
+  { id: 'dt-corp-tax-cert', name: 'Corporate Tax Registration Certificate', category: 'tax', hasExpiry: false, defaultReminderDays: [], defaultChannels: [] },
+  { id: 'dt-excise', name: 'Excise Tax Registration', category: 'tax', hasExpiry: false, defaultReminderDays: [], defaultChannels: [] },
+  { id: 'dt-ubo', name: 'UBO Declaration', category: 'tax', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-aml', name: 'AML/CTF (goAML) Registration', category: 'tax', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-bank-kyc', name: 'Bank Account KYC Documents', category: 'financial', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-insurance', name: 'Insurance Policy', category: 'financial', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp', 'email'] },
+]
+
+export const clients: Client[] = [
+  { id: 'c1', name: 'Ahmed Al Falasi', businessName: 'Al Falasi Grocery LLC', businessType: 'grocery', trn: '10034**********', phone: '+971 50 111 2233', whatsapp: '+971 50 111 2233', email: 'ahmed.falasi@example.ae', status: 'active', createdAt: '2024-02-10', avatarColor: 'bg-accent-500' },
+  { id: 'c2', name: 'Fatima Hassan', businessName: 'Hassan Trading Co.', businessType: 'trading', trn: '10087**********', phone: '+971 52 222 3344', whatsapp: '+971 52 222 3344', email: 'fatima.hassan@example.ae', referredById: 'c1', status: 'active', createdAt: '2024-05-18', avatarColor: 'bg-warning-500' },
+  { id: 'c3', name: 'Mohammed Rashid', businessName: 'Rashid Mart', businessType: 'grocery', trn: '10091**********', phone: '+971 55 333 4455', whatsapp: '+971 55 333 4455', email: 'm.rashid@example.ae', referredById: 'c2', status: 'active', createdAt: '2024-09-02', avatarColor: 'bg-success-500' },
+  { id: 'c4', name: 'Sara Abdullah', businessName: 'Deira Fresh Grocery', businessType: 'grocery', trn: '10102**********', phone: '+971 56 444 5566', whatsapp: '+971 56 444 5566', email: 'sara.abdullah@example.ae', referredById: 'c1', status: 'active', createdAt: '2025-01-14', avatarColor: 'bg-danger-500' },
+  { id: 'c5', name: 'Yousef Khan', businessName: 'Khan F&B Ventures', businessType: 'f&b', trn: '10119**********', phone: '+971 50 555 6677', whatsapp: '+971 50 555 6677', email: 'yousef.khan@example.ae', status: 'active', createdAt: '2024-11-30', avatarColor: 'bg-accent-700' },
+  { id: 'c6', name: 'Layla Ahmed', businessName: 'Al Barsha Retail', businessType: 'services', trn: '10125**********', phone: '+971 54 666 7788', whatsapp: '+971 54 666 7788', email: 'layla.ahmed@example.ae', referredById: 'c5', status: 'active', createdAt: '2025-03-05', avatarColor: 'bg-warning-600' },
+  { id: 'c7', name: 'Omar Saeed', businessName: 'Saeed Consulting Services', businessType: 'services', trn: '10133**********', phone: '+971 58 777 8899', whatsapp: '+971 58 777 8899', email: 'omar.saeed@example.ae', referredById: 'c6', status: 'active', createdAt: '2025-06-21', avatarColor: 'bg-success-600' },
+  { id: 'c8', name: 'Noora Salem', businessName: 'Salem Trading LLC', businessType: 'trading', trn: '10140**********', phone: '+971 50 888 9900', whatsapp: '+971 50 888 9900', email: 'noora.salem@example.ae', status: 'active', createdAt: '2025-02-11', avatarColor: 'bg-accent-600' },
+  { id: 'c9', name: 'Khalid Nasser', businessName: 'Nasser Grocery & Supermarket', businessType: 'grocery', trn: '10148**********', phone: '+971 52 999 0011', whatsapp: '+971 52 999 0011', email: 'khalid.nasser@example.ae', referredById: 'c8', status: 'active', createdAt: '2025-07-09', avatarColor: 'bg-danger-600' },
+  { id: 'c10', name: 'Priya Sharma', businessType: 'other', phone: '+971 55 000 1122', whatsapp: '+971 55 000 1122', email: 'priya.sharma@example.com', referredById: 'c1', status: 'onboarding', createdAt: '2026-07-18', avatarColor: 'bg-ink-500' },
+]
+
+export const clientDocuments: ClientDocument[] = [
+  { id: 'd1', clientId: 'c1', typeId: 'dt-trade-license', number: 'DED-778213', issueDate: '2025-08-01', expiryDate: '2026-08-01', status: 'expiring', matterId: 'm1' },
+  { id: 'd2', clientId: 'c1', typeId: 'dt-eid', number: '784-1985-1234567-1', issueDate: '2023-08-15', expiryDate: '2027-08-15', status: 'valid' },
+  { id: 'd3', clientId: 'c1', typeId: 'dt-visa', number: 'V-556213', issueDate: '2023-08-15', expiryDate: '2026-08-10', status: 'expiring' },
+  { id: 'd4', clientId: 'c1', typeId: 'dt-municipality-permit', number: 'MUN-33210', issueDate: '2025-06-01', expiryDate: '2026-08-05', status: 'expiring' },
+  { id: 'd5', clientId: 'c1', typeId: 'dt-civil-defense', number: 'CD-90211', issueDate: '2025-01-10', expiryDate: '2027-01-10', status: 'valid' },
+  { id: 'd6', clientId: 'c1', typeId: 'dt-ejari', number: 'EJ-4471102', issueDate: '2025-09-01', expiryDate: '2026-09-01', status: 'valid' },
+  { id: 'd7', clientId: 'c1', typeId: 'dt-vat-cert', number: 'TRN 10034XXXXXXXXXX', issueDate: '2019-01-15', expiryDate: '2099-01-01', status: 'valid' },
+
+  { id: 'd8', clientId: 'c2', typeId: 'dt-trade-license', number: 'DED-661832', issueDate: '2025-05-20', expiryDate: '2026-05-20', status: 'expired' },
+  { id: 'd9', clientId: 'c2', typeId: 'dt-eid', number: '784-1990-2234567-2', issueDate: '2024-06-01', expiryDate: '2028-06-01', status: 'valid' },
+  { id: 'd10', clientId: 'c2', typeId: 'dt-passport', number: 'P2245781', issueDate: '2021-03-01', expiryDate: '2031-03-01', status: 'valid' },
+  { id: 'd11', clientId: 'c2', typeId: 'dt-vat-cert', number: 'TRN 10087XXXXXXXXXX', issueDate: '2020-04-01', expiryDate: '2099-01-01', status: 'valid' },
+
+  { id: 'd12', clientId: 'c3', typeId: 'dt-trade-license', number: 'DED-990441', issueDate: '2025-09-10', expiryDate: '2026-09-10', status: 'valid' },
+  { id: 'd13', clientId: 'c3', typeId: 'dt-civil-defense', number: 'CD-11209', issueDate: '2024-08-01', expiryDate: '2026-08-01', status: 'expiring', matterId: 'm3' },
+  { id: 'd14', clientId: 'c3', typeId: 'dt-eid', number: '784-1988-3234567-3', issueDate: '2022-09-01', expiryDate: '2026-09-01', status: 'valid' },
+
+  { id: 'd15', clientId: 'c4', typeId: 'dt-trade-license', number: 'DED-552210', issueDate: '2024-07-01', expiryDate: '2026-07-01', status: 'expired', matterId: 'm4' },
+  { id: 'd16', clientId: 'c4', typeId: 'dt-municipality-permit', number: 'MUN-77812', issueDate: '2024-07-05', expiryDate: '2026-07-05', status: 'expired', matterId: 'm4' },
+  { id: 'd17', clientId: 'c4', typeId: 'dt-visa', number: 'V-778120', issueDate: '2023-06-01', expiryDate: '2026-07-15', status: 'expired' },
+  { id: 'd18', clientId: 'c4', typeId: 'dt-ejari', number: 'EJ-220198', issueDate: '2025-08-01', expiryDate: '2026-08-01', status: 'expiring' },
+
+  { id: 'd19', clientId: 'c5', typeId: 'dt-trade-license', number: 'DED-114420', issueDate: '2025-12-01', expiryDate: '2026-12-01', status: 'valid' },
+  { id: 'd20', clientId: 'c5', typeId: 'dt-civil-defense', number: 'CD-55021', issueDate: '2025-11-01', expiryDate: '2026-11-01', status: 'valid' },
+  { id: 'd21', clientId: 'c5', typeId: 'dt-eid', number: '784-1992-4234567-4', issueDate: '2024-01-01', expiryDate: '2028-01-01', status: 'valid' },
+
+  { id: 'd22', clientId: 'c6', typeId: 'dt-trade-license', number: 'DED-330214', issueDate: '2025-08-12', expiryDate: '2026-08-12', status: 'expiring' },
+  { id: 'd23', clientId: 'c6', typeId: 'dt-visa', number: 'V-991022', issueDate: '2023-10-01', expiryDate: '2026-10-01', status: 'valid' },
+
+  { id: 'd24', clientId: 'c7', typeId: 'dt-trade-license', number: 'DED-771002', issueDate: '2025-06-21', expiryDate: '2026-06-21', status: 'expired', matterId: 'm10' },
+  { id: 'd25', clientId: 'c7', typeId: 'dt-eid', number: '784-1995-5234567-5', issueDate: '2024-06-21', expiryDate: '2028-06-21', status: 'valid' },
+
+  { id: 'd26', clientId: 'c8', typeId: 'dt-trade-license', number: 'DED-441209', issueDate: '2025-02-11', expiryDate: '2027-02-11', status: 'valid' },
+  { id: 'd27', clientId: 'c8', typeId: 'dt-vat-cert', number: 'TRN 10140XXXXXXXXXX', issueDate: '2021-01-01', expiryDate: '2099-01-01', status: 'valid' },
+
+  { id: 'd28', clientId: 'c9', typeId: 'dt-trade-license', number: 'DED-889021', issueDate: '2025-07-09', expiryDate: '2026-08-09', status: 'expiring' },
+  { id: 'd29', clientId: 'c9', typeId: 'dt-municipality-permit', number: 'MUN-99021', issueDate: '2025-07-09', expiryDate: '2026-08-01', status: 'expiring' },
+  { id: 'd30', clientId: 'c9', typeId: 'dt-civil-defense', number: 'CD-77801', issueDate: '2025-07-09', expiryDate: '2027-07-09', status: 'valid' },
+]
+
+export const complianceDeadlines: ComplianceDeadline[] = [
+  { id: 'cd1', clientId: 'c1', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
+  { id: 'cd2', clientId: 'c2', name: 'VAT Return Filing (Jun 2026)', recurrence: 'monthly', nextDueDate: '2026-07-15', status: 'overdue' },
+  { id: 'cd3', clientId: 'c3', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
+  { id: 'cd4', clientId: 'c4', name: 'Corporate Tax Return (FY2025)', recurrence: 'annual', nextDueDate: '2026-09-30', status: 'upcoming' },
+  { id: 'cd5', clientId: 'c5', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
+  { id: 'cd6', clientId: 'c8', name: 'ESR Notification (2026)', recurrence: 'annual', nextDueDate: '2026-08-30', status: 'upcoming' },
+  { id: 'cd7', clientId: 'c9', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
+  { id: 'cd8', clientId: 'c6', name: 'Corporate Tax Return (FY2025)', recurrence: 'annual', nextDueDate: '2026-09-30', status: 'upcoming' },
+]
+
+export const reminderRules: ReminderRule[] = documentTypes
+  .filter((t) => t.hasExpiry)
+  .map((t, i) => ({
+    id: `rr-${i + 1}`,
+    typeId: t.id,
+    typeName: t.name,
+    daysBefore: t.defaultReminderDays,
+    channels: t.defaultChannels,
+    enabled: true,
+  }))
+
+export const reminderLog: ReminderLogEntry[] = [
+  { id: 'rl1', clientId: 'c1', subject: 'Trade License expires in 7 days', channel: 'whatsapp', sentAt: '2026-07-21T09:00:00', status: 'delivered' },
+  { id: 'rl2', clientId: 'c1', subject: 'Residence Visa expires in 20 days', channel: 'email', sentAt: '2026-07-21T09:00:00', status: 'sent' },
+  { id: 'rl3', clientId: 'c2', subject: 'Trade License expired', channel: 'whatsapp', sentAt: '2026-07-20T09:00:00', status: 'delivered' },
+  { id: 'rl4', clientId: 'c2', subject: 'VAT Return overdue', channel: 'sms', sentAt: '2026-07-16T09:00:00', status: 'failed' },
+  { id: 'rl5', clientId: 'c4', subject: 'Municipality Permit expired', channel: 'email', sentAt: '2026-07-06T09:00:00', status: 'delivered' },
+  { id: 'rl6', clientId: 'c4', subject: 'Residence Visa expired', channel: 'whatsapp', sentAt: '2026-07-16T09:00:00', status: 'delivered' },
+  { id: 'rl7', clientId: 'c9', subject: 'Trade License expires in 19 days', channel: 'whatsapp', sentAt: '2026-07-21T09:00:00', status: 'sent' },
+  { id: 'rl8', clientId: 'c3', subject: 'Civil Defense NOC expires in 11 days', channel: 'email', sentAt: '2026-07-21T09:00:00', status: 'delivered' },
+]
+
+export const services: Service[] = [
+  { id: 'svc-vat-reg', name: 'VAT Registration', description: 'End-to-end FTA VAT registration and TRN issuance.', price: 1500, vatApplicable: true },
+  { id: 'svc-vat-return', name: 'VAT Return Filing', description: 'Periodic VAT return preparation and submission.', price: 750, vatApplicable: true },
+  { id: 'svc-trade-license-renewal', name: 'Trade License Renewal', description: 'DED / Free Zone trade license renewal handling.', price: 950, vatApplicable: true },
+  { id: 'svc-corp-tax-reg', name: 'Corporate Tax Registration', description: 'Corporate Tax registration with the FTA.', price: 1800, vatApplicable: true },
+  { id: 'svc-corp-tax-filing', name: 'Corporate Tax Return Filing', description: 'Annual Corporate Tax return preparation and filing.', price: 2500, vatApplicable: true },
+  { id: 'svc-credit-note', name: 'Tax Credit Note Preparation', description: 'FTA-compliant tax credit note drafting and review.', price: 400, vatApplicable: true },
+  { id: 'svc-esr-report', name: 'ESR Notification & Report', description: 'Economic Substance Regulations filing support.', price: 1200, vatApplicable: true },
+  { id: 'svc-ubo-update', name: 'UBO Declaration Update', description: 'Ultimate Beneficial Owner declaration update.', price: 600, vatApplicable: true },
+]
+
+export const matters: Matter[] = [
+  { id: 'm1', clientId: 'c1', title: 'Trade License Renewal 2026', serviceId: 'svc-trade-license-renewal', status: 'in-progress', openedAt: '2026-07-01', dueDate: '2026-08-01', invoiceId: 'inv-1005', checklist: checklistAt('svc-trade-license-renewal', 2) },
+  { id: 'm2', clientId: 'c2', title: 'VAT Return — June 2026', serviceId: 'svc-vat-return', status: 'submitted', openedAt: '2026-07-05', dueDate: '2026-07-15', invoiceId: 'inv-1003', checklist: checklistAt('svc-vat-return', 5) },
+  { id: 'm3', clientId: 'c3', title: 'Civil Defense NOC Renewal', serviceId: 'svc-trade-license-renewal', status: 'documents-collected', openedAt: '2026-07-10', dueDate: '2026-08-01', checklist: checklistAt('svc-trade-license-renewal', 1) },
+  { id: 'm4', clientId: 'c4', title: 'Trade License + Municipality Permit Renewal', serviceId: 'svc-trade-license-renewal', status: 'intake', openedAt: '2026-07-18', dueDate: '2026-08-05', checklist: checklistAt('svc-trade-license-renewal', 0) },
+  { id: 'm5', clientId: 'c5', title: 'VAT Return — Q2 2026', serviceId: 'svc-vat-return', status: 'in-progress', openedAt: '2026-07-12', dueDate: '2026-07-28', checklist: checklistAt('svc-vat-return', 2) },
+  { id: 'm6', clientId: 'c6', title: 'Corporate Tax Registration', serviceId: 'svc-corp-tax-reg', status: 'completed', openedAt: '2026-05-01', dueDate: '2026-06-01', completedAt: '2026-06-05', invoiceId: 'inv-1001', checklist: checklistAt('svc-corp-tax-reg', 4) },
+  { id: 'm7', clientId: 'c8', title: 'ESR Notification 2026', serviceId: 'svc-esr-report', status: 'in-progress', openedAt: '2026-07-08', dueDate: '2026-08-30', checklist: checklistAt('svc-esr-report', 2) },
+  { id: 'm8', clientId: 'c9', title: 'VAT Registration', serviceId: 'svc-vat-reg', status: 'completed', openedAt: '2026-07-09', dueDate: '2026-07-20', completedAt: '2026-07-20', invoiceId: 'inv-1002', checklist: checklistAt('svc-vat-reg', 5) },
+  { id: 'm9', clientId: 'c1', title: 'Credit Note for Discounted Renewal Fee', serviceId: 'svc-credit-note', status: 'completed', openedAt: '2026-06-15', dueDate: '2026-06-20', completedAt: '2026-06-22', invoiceId: 'inv-1004', checklist: checklistAt('svc-credit-note', 4) },
+  { id: 'm10', clientId: 'c7', title: 'Trade License Renewal 2026', serviceId: 'svc-trade-license-renewal', status: 'intake', openedAt: '2026-07-19', dueDate: '2026-08-10', checklist: checklistAt('svc-trade-license-renewal', 0) },
+]
+
+export const quotes: Quote[] = [
+  { id: 'q1', clientId: 'c4', serviceIds: ['svc-trade-license-renewal'], amount: 997.5, status: 'sent', createdAt: '2026-07-18' },
+  { id: 'q2', clientId: 'c7', serviceIds: ['svc-trade-license-renewal'], amount: 997.5, status: 'accepted', createdAt: '2026-07-19' },
+  { id: 'q3', clientId: 'c10', serviceIds: ['svc-vat-reg'], amount: 1575, status: 'draft', createdAt: '2026-07-19' },
+  { id: 'q4', clientId: 'c3', serviceIds: ['svc-trade-license-renewal'], amount: 997.5, status: 'accepted', createdAt: '2026-07-10' },
+]
+
+export const invoices: Invoice[] = [
+  { id: 'inv-1001', number: 'INV-2026-1001', clientId: 'c6', matterId: 'm6', lines: [{ serviceId: 'svc-corp-tax-reg', description: 'Corporate Tax Registration', qty: 1, unitPrice: 1800 }], issueDate: '2026-06-01', dueDate: '2026-06-15', status: 'paid', paidAmount: 1890 },
+  { id: 'inv-1002', number: 'INV-2026-1002', clientId: 'c9', matterId: 'm8', lines: [{ serviceId: 'svc-vat-reg', description: 'VAT Registration', qty: 1, unitPrice: 1500 }], issueDate: '2026-07-09', dueDate: '2026-07-23', status: 'paid', paidAmount: 1575 },
+  { id: 'inv-1003', number: 'INV-2026-1003', clientId: 'c2', matterId: 'm2', lines: [{ serviceId: 'svc-vat-return', description: 'VAT Return Filing — June 2026', qty: 1, unitPrice: 750 }], issueDate: '2026-07-05', dueDate: '2026-07-19', status: 'overdue', paidAmount: 0 },
+  { id: 'inv-1004', number: 'INV-2026-1004', clientId: 'c1', matterId: 'm9', lines: [{ serviceId: 'svc-trade-license-renewal', description: 'Trade License Renewal 2026', qty: 1, unitPrice: 950 }], issueDate: '2026-06-15', dueDate: '2026-06-29', status: 'paid', paidAmount: 907.5 },
+  { id: 'inv-1005', number: 'INV-2026-1005', clientId: 'c1', matterId: 'm1', lines: [{ serviceId: 'svc-trade-license-renewal', description: 'Trade License Renewal 2026', qty: 1, unitPrice: 950 }], issueDate: '2026-07-01', dueDate: '2026-07-15', status: 'partial', paidAmount: 500 },
+  { id: 'inv-1006', number: 'INV-2026-1006', clientId: 'c5', lines: [{ serviceId: 'svc-vat-return', description: 'VAT Return Filing — Q2 2026', qty: 1, unitPrice: 750 }], issueDate: '2026-07-12', dueDate: '2026-07-26', status: 'unpaid', paidAmount: 0 },
+  { id: 'inv-1007', number: 'INV-2026-1007', clientId: 'c8', lines: [{ serviceId: 'svc-esr-report', description: 'ESR Notification & Report', qty: 1, unitPrice: 1200 }], issueDate: '2026-07-08', dueDate: '2026-07-22', status: 'unpaid', paidAmount: 0 },
+]
+
+export const creditNotes: CreditNote[] = [
+  { id: 'cn1', number: 'CN-2026-001', kind: 'firm-issued', clientId: 'c1', invoiceId: 'inv-1004', reason: 'Loyalty discount applied after invoice was issued', amount: 47.5, vatAmount: 2.5, issueDate: '2026-06-20' },
+  { id: 'cn2', number: 'CN-2026-002', kind: 'client-advisory', clientId: 'c9', reason: 'Advisory: credit note for returned stock issued to Nasser Grocery’s own customer', amount: 1200, vatAmount: 60, issueDate: '2026-07-14' },
+  { id: 'cn3', number: 'CN-2026-003', kind: 'client-advisory', clientId: 'c1', reason: 'Advisory: bulk order cancellation credit note for Al Falasi Grocery’s wholesale client', amount: 3400, vatAmount: 170, issueDate: '2026-05-28' },
+]
+
+export const expenses: Expense[] = [
+  { id: 'e1', category: 'Office Rent', description: 'Monthly office rent — Business Bay', amount: 8000, date: '2026-07-01', isDisbursement: false, billed: false },
+  { id: 'e2', category: 'Software', description: 'Practice management SaaS subscription', amount: 350, date: '2026-07-02', isDisbursement: false, billed: false },
+  { id: 'e3', category: 'Government Fees', description: 'DED Trade License renewal fee paid on behalf of client', amount: 620, date: '2026-07-01', isDisbursement: true, clientId: 'c1', billed: true },
+  { id: 'e4', category: 'Government Fees', description: 'FTA VAT registration fee paid on behalf of client', amount: 300, date: '2026-07-09', isDisbursement: true, clientId: 'c9', billed: true },
+  { id: 'e5', category: 'Government Fees', description: 'Civil Defense NOC processing fee paid on behalf of client', amount: 450, date: '2026-07-10', isDisbursement: true, clientId: 'c3', billed: false },
+  { id: 'e6', category: 'Marketing', description: 'Google Ads — lead generation', amount: 1200, date: '2026-07-05', isDisbursement: false, billed: false },
+  { id: 'e7', category: 'Salaries', description: 'Admin assistant salary', amount: 5500, date: '2026-07-01', isDisbursement: false, billed: false },
+  { id: 'e8', category: 'Utilities', description: 'DEWA + internet', amount: 480, date: '2026-07-03', isDisbursement: false, billed: false },
+  { id: 'e9', category: 'Government Fees', description: 'Corporate Tax registration fee paid on behalf of client', amount: 250, date: '2026-06-01', isDisbursement: true, clientId: 'c6', billed: true },
+  { id: 'e10', category: 'Professional Fees', description: 'External auditor consultation', amount: 900, date: '2026-06-20', isDisbursement: false, billed: false },
+]
+
+export const ledgerEntries: LedgerEntry[] = [
+  { id: 'l1', date: '2026-07-01', account: 'Service Revenue', description: 'INV-2026-1001 payment received', debit: 0, credit: 1890 },
+  { id: 'l2', date: '2026-07-09', account: 'Service Revenue', description: 'INV-2026-1002 payment received', debit: 0, credit: 1575 },
+  { id: 'l3', date: '2026-06-15', account: 'Service Revenue', description: 'INV-2026-1004 payment received', debit: 0, credit: 907.5 },
+  { id: 'l4', date: '2026-06-20', account: 'Credit Notes Issued', description: 'CN-2026-001 applied to INV-2026-1004', debit: 50, credit: 0 },
+  { id: 'l5', date: '2026-07-01', account: 'Rent Expense', description: 'Office rent — July 2026', debit: 8000, credit: 0 },
+  { id: 'l6', date: '2026-07-02', account: 'Software Expense', description: 'Practice management SaaS', debit: 350, credit: 0 },
+  { id: 'l7', date: '2026-07-01', account: 'Disbursements Receivable', description: 'DED fee paid on behalf of Al Falasi Grocery', debit: 620, credit: 0 },
+  { id: 'l8', date: '2026-07-05', account: 'Marketing Expense', description: 'Google Ads', debit: 1200, credit: 0 },
+  { id: 'l9', date: '2026-07-01', account: 'Salary Expense', description: 'Admin assistant', debit: 5500, credit: 0 },
+  { id: 'l10', date: '2026-07-01', account: 'VAT Payable', description: 'Output VAT collected — July invoices', debit: 0, credit: 165 },
+]
+
+export const walletTransactions: WalletTransaction[] = [
+  { id: 'w1', clientId: 'c1', type: 'credit', reason: 'Referral bonus — Fatima Hassan onboarded (Level 1)', amount: 150, date: '2024-05-18' },
+  { id: 'w2', clientId: 'c1', type: 'credit', reason: 'Referral bonus — Sara Abdullah onboarded (Level 1)', amount: 150, date: '2025-01-14' },
+  { id: 'w3', clientId: 'c1', type: 'credit', reason: 'Referral bonus — Mohammed Rashid onboarded (Level 2)', amount: 60, date: '2024-09-02' },
+  { id: 'w4', clientId: 'c1', type: 'debit', reason: 'Applied to INV-2026-1005', amount: 100, date: '2026-07-01' },
+  { id: 'w5', clientId: 'c2', type: 'credit', reason: 'Referral bonus — Mohammed Rashid onboarded (Level 1)', amount: 150, date: '2024-09-02' },
+  { id: 'w6', clientId: 'c5', type: 'credit', reason: 'Referral bonus — Layla Ahmed onboarded (Level 1)', amount: 150, date: '2025-03-05' },
+  { id: 'w7', clientId: 'c5', type: 'credit', reason: 'Referral bonus — Omar Saeed onboarded (Level 2)', amount: 60, date: '2025-06-21' },
+  { id: 'w8', clientId: 'c6', type: 'credit', reason: 'Referral bonus — Omar Saeed onboarded (Level 1)', amount: 150, date: '2025-06-21' },
+  { id: 'w9', clientId: 'c8', type: 'credit', reason: 'Referral bonus — Khalid Nasser onboarded (Level 1)', amount: 150, date: '2025-07-09' },
+  { id: 'w10', clientId: 'c8', type: 'debit', reason: 'Withdrawal — bank transfer', amount: 100, date: '2026-06-01' },
+]
+
+export const referralBonusRules: ReferralBonusRule[] = [
+  { level: 1, label: 'Direct referral', type: 'flat', value: 150, enabled: true },
+  { level: 2, label: 'Sub-referral (one level down)', type: 'flat', value: 60, enabled: true },
+  { level: 3, label: 'Third level', type: 'percentage', value: 2, enabled: false },
+]

@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Brand accent: deep teal — confident, financial/legal register, not generic SaaS blue */
+  --color-accent-50: #eefbfa;
+  --color-accent-100: #d3f3f0;
+  --color-accent-200: #a8e7e1;
+  --color-accent-300: #74d3ca;
+  --color-accent-400: #43b6ac;
+  --color-accent-500: #279a90;
+  --color-accent-600: #1c7c74;
+  --color-accent-700: #1a635e;
+  --color-accent-800: #194f4c;
+  --color-accent-900: #184240;
+  --color-accent-950: #082625;
+
+  /* Semantic urgency triad */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  /* Neutral ink scale (warm-neutral, not pure gray) */
+  --color-ink-50: #f8f9f8;
+  --color-ink-100: #eef0ef;
+  --color-ink-200: #dde1df;
+  --color-ink-300: #c2c9c5;
+  --color-ink-400: #97a19b;
+  --color-ink-500: #728079;
+  --color-ink-600: #58655f;
+  --color-ink-700: #47514c;
+  --color-ink-800: #333b37;
+  --color-ink-900: #1e2422;
+  --color-ink-950: #121614;
+
+  --shadow-card: 0 1px 2px rgba(18, 22, 20, 0.04), 0 1px 12px rgba(18, 22, 20, 0.03);
+  --shadow-card-hover: 0 2px 6px rgba(18, 22, 20, 0.06), 0 8px 24px rgba(18, 22, 20, 0.06);
+  --shadow-popover: 0 8px 16px rgba(18, 22, 20, 0.08), 0 2px 40px rgba(18, 22, 20, 0.1);
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+  margin: 0;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+html.dark body {
+  @apply bg-ink-950 text-ink-100;
+}
+
+* {
+  scrollbar-color: var(--color-ink-300) transparent;
+}
+html.dark * {
+  scrollbar-color: var(--color-ink-700) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-300);
+  border-radius: 8px;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 0.18s ease-out; }
+.animate-slide-up { animation: slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
