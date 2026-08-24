@@ -62,8 +62,8 @@ export function SettingsPage() {
 
   function removeObligation(type: ObligationType) {
     const result = deleteObligationType(type.id)
-    // The refusal reason is the whole point of the interaction — a delete that
-    // just does nothing reads as a broken button.
+    //The refusal reason is the whole point of the interaction — a delete that
+    //Just does nothing reads as a broken button.
     show(result.ok ? `${type.name} deleted` : (result.reason ?? 'That obligation cannot be deleted.'))
   }
 
