@@ -17,12 +17,12 @@ const DEMO_PASSWORDS: Record<string, string> = {
   'staff-3': 'assistant2026',
 }
 
-export function demoPasswordFor(staffId: string): string {
-  return DEMO_PASSWORDS[staffId] ?? ''
+export function demoPasswordFor(id: string): string {
+  return DEMO_PASSWORDS[id] ?? 'client2026'
 }
 
-/** Whether a staff id + password pair matches. The only check in the demo. */
-export function demoPasswordMatches(staffId: string, password: string): boolean {
-  const expected = DEMO_PASSWORDS[staffId]
+/** Whether a staff or client id + password pair matches. The only check in the demo. */
+export function demoPasswordMatches(id: string, password: string): boolean {
+  const expected = DEMO_PASSWORDS[id] ?? 'client2026'
   return !!expected && expected === password
 }

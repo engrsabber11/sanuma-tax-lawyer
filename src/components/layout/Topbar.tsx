@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Search, Sun, Moon, Plus, Menu, ChevronDown, LogOut, UserCheck, Bell, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react'
+import { Search, Sun, Moon, Plus, Menu, ChevronDown, LogOut, Bell, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react'
 import { useTheme } from '../../lib/theme'
 import { Avatar } from '../ui/Avatar'
 import { Badge } from '../ui/Badge'
@@ -10,12 +10,12 @@ import { useToast } from '../../lib/toast'
 
 export function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () => void }) {
   const { theme, toggle } = useTheme()
-  const { activeStaff, setActiveStaff, staffMembers, signOut, clientDocuments, filingPeriods, clients } = useData()
+  const { activeStaff, signOut, clientDocuments, filingPeriods, clients } = useData()
   const { show } = useToast()
   const navigate = useNavigate()
   const [quickAddOpen, setQuickAddOpen] = useState(false)
-  const [staffOpen, setStaffOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
 
   // Internal Push Notifications derived from urgent items
   const internalAlerts = [
@@ -64,61 +64,6 @@ export function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () 
       </button>
 
       <div className="ml-auto flex items-center gap-2">
-        {/* Staff Persona / RBAC Switcher */}
-        <div className="relative">
-          <button
-            onClick={() => setStaffOpen((o) => !o)}
-            onBlur={() => setTimeout(() => setStaffOpen(false), 150)}
-            className="flex h-9.5 items-center gap-2 rounded-lg border border-ink-200/80 bg-ink-50/60 px-2.5 text-left text-xs transition-colors hover:bg-ink-100 dark:border-ink-700 dark:bg-ink-900 dark:hover:bg-ink-800"
-          >
-            <Avatar name={activeStaff.name} color={activeStaff.avatarColor} size="xs" />
-            <div className="flex flex-col">
-              <span className="font-semibold leading-tight text-ink-800 dark:text-ink-100">{activeStaff.name}</span>
-              <span className="text-[10px] text-ink-400">{ROLE_LABEL[activeStaff.role]}</span>
-            </div>
-            <ChevronDown className="h-3 w-3 text-ink-400" />
-          </button>
-
-          {staffOpen && (
-            <div className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-ink-200 bg-white p-1.5 shadow-[var(--shadow-popover)] dark:border-ink-800 dark:bg-ink-900">
-              <p className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400">
-                Switch Active Role / Staff
-              </p>
-              {staffMembers.map((staff) => (
-                <button
-                  key={staff.id}
-                  onClick={() => {
-                    setActiveStaff(staff)
-                    setStaffOpen(false)
-                    show(`Switched active user to ${staff.name} (${staff.role})`)
-                  }}
-                  className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
-                    activeStaff.id === staff.id
-                      ? 'bg-accent-50 text-accent-800 dark:bg-accent-900/30 dark:text-accent-300'
-                      : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800'
-                  }`}
-                >
-                  <Avatar name={staff.name} color={staff.avatarColor} size="xs" />
-                  <div className="flex-1">
-                    <p className="font-semibold">{staff.name}</p>
-                    <p className="text-[10px] text-ink-400">{staff.title}</p>
-                  </div>
-                  {activeStaff.id === staff.id && (
-                    <UserCheck className="h-3.5 w-3.5 text-accent-600" />
-                  )}
-                </button>
-              ))}
-              <button
-                onClick={signOut}
-                className="mt-1 flex w-full items-center gap-2.5 rounded-lg border-t border-ink-100 px-2.5 py-2.5 text-left text-xs text-ink-600 transition-colors hover:bg-danger-50 hover:text-danger-700 dark:border-ink-800 dark:text-ink-300 dark:hover:bg-danger-500/10 dark:hover:text-danger-400"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span className="font-medium">Sign out</span>
-              </button>
-            </div>
-          )}
-        </div>
-
         {/* Quick Add Button */}
         <div className="relative">
           <button
@@ -185,9 +130,8 @@ export function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () 
                 {internalAlerts.map((alert) => (
                   <div
                     key={alert.id}
-                    className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-ink-50/80 dark:hover:bg-ink-800/40 ${
-                      alert.unread ? 'bg-accent-50/30 dark:bg-accent-950/20' : ''
-                    }`}
+                    className={`flex items-start gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-ink-50/80 dark:hover:bg-ink-800/40 ${alert.unread ? 'bg-accent-50/30 dark:bg-accent-950/20' : ''
+                      }`}
                   >
                     <div className="mt-0.5">
                       {alert.type === 'tax' ? (
@@ -226,9 +170,57 @@ export function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () 
           {theme === 'dark' ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
         </button>
 
-        <button className="ml-1" aria-label="Account settings" onClick={() => navigate('/settings')}>
-          <Avatar name={activeStaff.name} color={activeStaff.avatarColor} size="sm" />
-        </button>
+        {/* User Account Popover */}
+        <div className="relative">
+          <button
+            onClick={() => setAccountOpen((o) => !o)}
+            onBlur={() => setTimeout(() => setAccountOpen(false), 150)}
+            className="ml-1 flex items-center rounded-full ring-2 ring-transparent transition-all hover:ring-accent-500/30 focus:outline-none"
+            aria-label="User Account Menu"
+          >
+            <Avatar name={activeStaff.name} color={activeStaff.avatarColor} size="sm" />
+          </button>
+
+          {accountOpen && (
+            <div className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-ink-200 bg-white p-1.5 shadow-[var(--shadow-popover)] dark:border-ink-800 dark:bg-ink-900">
+              <div className="flex items-center gap-3 border-b border-ink-100 p-2.5 dark:border-ink-800">
+                <Avatar name={activeStaff.name} color={activeStaff.avatarColor} size="md" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink-900 dark:text-ink-100">{activeStaff.name}</p>
+                  <p className="text-[11px] font-medium text-accent-600 dark:text-accent-400">{ROLE_LABEL[activeStaff.role]}</p>
+                  <p className="truncate text-[10px] text-ink-400">{activeStaff.title}</p>
+                </div>
+              </div>
+
+              <div className="py-1">
+                <button
+                  onClick={() => {
+                    navigate('/settings')
+                    setAccountOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800"
+                >
+                  <Search className="h-4 w-4 text-ink-400" />
+                  Account Settings &amp; Preferences
+                </button>
+              </div>
+
+              <div className="border-t border-ink-100 pt-1 dark:border-ink-800">
+                <button
+                  onClick={() => {
+                    signOut()
+                    setAccountOpen(false)
+                    show('You have been signed out')
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-danger-600 transition-colors hover:bg-danger-50 dark:text-danger-400 dark:hover:bg-danger-950/30"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign Out of Sanuma OS
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )

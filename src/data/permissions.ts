@@ -75,7 +75,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
 }
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
-  partner: 'Partner (Owner)',
+  partner: 'Owner',
   consultant: 'Consultant',
   assistant: 'Assistant',
 }

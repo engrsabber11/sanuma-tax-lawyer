@@ -13,8 +13,12 @@ import {
   Users2,
   Settings,
   Scale,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { useData } from '../../data/store'
+import { Avatar } from '../ui/Avatar'
+import { ROLE_LABEL } from '../../data/permissions'
 
 const nav: { heading: string; items: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }[] }[] = [
   {
@@ -55,6 +59,8 @@ const nav: { heading: string; items: { to: string; label: string; icon: typeof L
 ]
 
 export function Sidebar() {
+  const { activeStaff, signOut } = useData()
+
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-ink-200/70 bg-white lg:flex dark:border-ink-800 dark:bg-ink-900">
       <div className="flex h-16 items-center gap-2.5 px-5">
@@ -97,7 +103,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-ink-100 p-3 dark:border-ink-800">
+      <div className="flex flex-col gap-1 border-t border-ink-100 p-3 dark:border-ink-800">
         <NavLink
           to="/settings"
           className={({ isActive }) =>
@@ -112,6 +118,23 @@ export function Sidebar() {
           <Settings className="h-4 w-4" />
           Settings
         </NavLink>
+
+        <div className="mt-1 flex items-center justify-between gap-2 rounded-xl bg-ink-50 p-2 dark:bg-ink-800/60">
+          <div className="flex items-center gap-2 min-w-0">
+            <Avatar name={activeStaff.name} color={activeStaff.avatarColor} size="xs" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-ink-800 dark:text-ink-100">{activeStaff.name}</p>
+              <p className="truncate text-[10px] text-ink-400">{ROLE_LABEL[activeStaff.role]}</p>
+            </div>
+          </div>
+          <button
+            onClick={signOut}
+            title="Sign out of session"
+            className="rounded-lg p-1.5 text-ink-400 transition-colors hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-900/30 dark:hover:text-danger-400"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </aside>
   )

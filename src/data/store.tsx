@@ -146,13 +146,13 @@ interface DataContextValue {
     filingPeriodId: string,
     details?:
       | {
-          filedAt?: string
-          ftaReferenceNo?: string
-          taxPayableOrRefund?: number
-          submissionReceiptName?: string
-          submittedBy?: string
-          note?: string
-        }
+        filedAt?: string
+        ftaReferenceNo?: string
+        taxPayableOrRefund?: number
+        submissionReceiptName?: string
+        submittedBy?: string
+        note?: string
+      }
       | string,
   ) => void
   markFilingNotRequired: (filingPeriodId: string) => void
@@ -231,7 +231,7 @@ const AVATAR_COLORS = ['bg-accent-500', 'bg-warning-500', 'bg-success-500', 'bg-
  * populated — worse than a clean reseed, and harder to diagnose.
  */
 const DEFAULT_FIRM_PROFILE: FirmProfile = {
-  name: 'Sanuma Tax Advisory FZE',
+  name: 'Sanuma Tax Advisory',
   trn: '100234567800003',
   address: 'Office 1402, Prism Tower, Business Bay, Dubai, UAE',
   phone: '+971 4 123 4567',
@@ -451,18 +451,30 @@ export const DEFAULT_STAFF_MEMBERS: StaffUser[] = [
 ]
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  // Restored from the session, NOT defaulted to the first staff member: landing
-  // as the Partner every reload made the other two roles impossible to test, and
-  // silently handed full permissions to whoever opened the tab.
   const [sessionStaffId, setSessionStaffId] = useState<string | null>(loadSessionStaffId)
-  const activeStaff =
-    DEFAULT_STAFF_MEMBERS.find((m) => m.id === sessionStaffId) ?? DEFAULT_STAFF_MEMBERS[0]
-  const signedIn = !!sessionStaffId && DEFAULT_STAFF_MEMBERS.some((m) => m.id === sessionStaffId)
   const [persisted] = useState(loadPersisted)
   const [clients, setClients] = useState<Client[]>(persisted.clients ?? seed.clients)
+
+  const currentClient = clients.find((c) => c.id === sessionStaffId)
+  const activeStaff: StaffUser =
+    DEFAULT_STAFF_MEMBERS.find((m) => m.id === sessionStaffId) ??
+    (currentClient
+      ? {
+        id: currentClient.id,
+        name: currentClient.name,
+        title: currentClient.businessName ? `Client (${currentClient.businessName})` : 'Client User',
+        email: currentClient.email,
+        avatarColor: currentClient.avatarColor || 'bg-amber-600 text-white',
+        role: 'assistant',
+      }
+      : DEFAULT_STAFF_MEMBERS[0])
+
+  const signedIn =
+    !!sessionStaffId &&
+    (DEFAULT_STAFF_MEMBERS.some((m) => m.id === sessionStaffId) || clients.some((c) => c.id === sessionStaffId))
+
   const [clientDocuments, setClientDocuments] = useState<ClientDocument[]>(persisted.clientDocuments ?? seed.clientDocuments)
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeDef[]>(persisted.documentTypes ?? seed.documentTypes)
-  // Setter intentionally omitted until Phase 8 adds the catalog editor.
   const [obligationTypes, setObligationTypes] = useState<ObligationType[]>(() =>
     hydrateObligationTypes(persisted.obligationTypes),
   )
@@ -476,8 +488,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     migrateReminderRules(persisted.reminderRules ?? seed.reminderRules),
   )
   const [reminderLog, setReminderLog] = useState<ReminderLogEntry[]>(persisted.reminderLog ?? seed.reminderLog)
-  // State saved before these fields existed is migrated on load: no checklist → empty,
-  // no clientInitiated → treated as client-initiated, so nothing is retro-penalised.
   const [matters, setMattersState] = useState<Matter[]>(
     (persisted.matters ?? seed.matters).map((m) => ({ ...m, checklist: m.checklist ?? [], clientInitiated: m.clientInitiated ?? true })),
   )
@@ -492,8 +502,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [penaltyFeeRule, setPenaltyFeeRule] = useState<PenaltyFeeRule>(persisted.penaltyFeeRule ?? seed.penaltyFeeRule)
   const [pendingCharges, setPendingCharges] = useState<PendingCharge[]>(persisted.pendingCharges ?? seed.pendingCharges)
   const [firmProfile, setFirmProfile] = useState<FirmProfile>(
-    // Spread over the default so a profile persisted before a field existed
-    // still gets it, rather than arriving as undefined.
     { ...DEFAULT_FIRM_PROFILE, ...(persisted.firmProfile ?? {}) },
   )
 
@@ -557,26 +565,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLedgerEntries((prev) => [...prev, { id: genId('l'), ...input }])
   }
 
-  function signIn(staffId: string) {
-    if (!DEFAULT_STAFF_MEMBERS.some((m) => m.id === staffId)) return
+  function signIn(userId: string) {
+    if (!DEFAULT_STAFF_MEMBERS.some((m) => m.id === userId) && !clients.some((c) => c.id === userId)) return
     try {
-      localStorage.setItem(SESSION_KEY, staffId)
+      localStorage.setItem(SESSION_KEY, userId)
     } catch {
       // A blocked storage write must not stop the sign-in; the session just
       // lasts until the tab closes.
     }
-    setSessionStaffId(staffId)
+    setSessionStaffId(userId)
   }
 
   function signInWithCredentials(email: string, password: string) {
     const trimmed = email.trim().toLowerCase()
     const staff = DEFAULT_STAFF_MEMBERS.find((m) => m.email.toLowerCase() === trimmed)
-    // Deliberately two different messages: this is a demo login whose job is to
-    // be learnable, not to resist enumeration. Real auth should collapse both
-    // into one generic failure.
-    if (!staff) return { ok: false, reason: 'No user with that email address.' }
-    if (!demoPasswordMatches(staff.id, password)) return { ok: false, reason: 'That password is not correct.' }
-    signIn(staff.id)
+    const client = clients.find((c) => c.email.toLowerCase() === trimmed)
+
+    if (!staff && !client) return { ok: false, reason: 'No user with that email address.' }
+    const id = staff?.id ?? client?.id ?? ''
+    if (!demoPasswordMatches(id, password)) return { ok: false, reason: 'That password is not correct.' }
+    signIn(id)
     return { ok: true }
   }
 
@@ -707,20 +715,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const moved =
       patch.periodicity !== undefined
         ? affected
-            .filter((r) => r.periodicity !== patch.periodicity)
-            .map((r) => {
-              const periodicity = patch.periodicity!
-              const staggerGroup = periodicity === 'quarterly' ? (r.staggerGroup ?? next.staggerOptions?.[0]) : undefined
-              const fiscalYearEndMonth =
-                periodicity === 'annual' ? (r.fiscalYearEndMonth ?? next.fiscalYearEndMonth ?? 12) : undefined
-              return {
-                ...r,
-                periodicity,
-                staggerGroup,
-                fiscalYearEndMonth,
-                ...deriveFirstPeriod(r.effectiveDate, periodicity, { staggerGroup, fiscalYearEndMonth }),
-              }
-            })
+          .filter((r) => r.periodicity !== patch.periodicity)
+          .map((r) => {
+            const periodicity = patch.periodicity!
+            const staggerGroup = periodicity === 'quarterly' ? (r.staggerGroup ?? next.staggerOptions?.[0]) : undefined
+            const fiscalYearEndMonth =
+              periodicity === 'annual' ? (r.fiscalYearEndMonth ?? next.fiscalYearEndMonth ?? 12) : undefined
+            return {
+              ...r,
+              periodicity,
+              staggerGroup,
+              fiscalYearEndMonth,
+              ...deriveFirstPeriod(r.effectiveDate, periodicity, { staggerGroup, fiscalYearEndMonth }),
+            }
+          })
         : []
 
     if (moved.length > 0) {
@@ -876,13 +884,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     filingPeriodId: string,
     details?:
       | {
-          filedAt?: string
-          ftaReferenceNo?: string
-          taxPayableOrRefund?: number
-          submissionReceiptName?: string
-          submittedBy?: string
-          note?: string
-        }
+        filedAt?: string
+        ftaReferenceNo?: string
+        taxPayableOrRefund?: number
+        submissionReceiptName?: string
+        submittedBy?: string
+        note?: string
+      }
       | string,
   ) {
     const filedAt = typeof details === 'string' ? details : details?.filedAt ?? todayIso()
@@ -895,14 +903,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       prev.map((p) =>
         p.id === filingPeriodId
           ? {
-              ...p,
-              state: 'filed',
-              filedAt,
-              ftaReferenceNo: ftaReferenceNo || p.ftaReferenceNo,
-              taxPayableOrRefund: taxPayableOrRefund !== undefined ? taxPayableOrRefund : p.taxPayableOrRefund,
-              submissionReceiptName: submissionReceiptName || p.submissionReceiptName,
-              submittedBy,
-            }
+            ...p,
+            state: 'filed',
+            filedAt,
+            ftaReferenceNo: ftaReferenceNo || p.ftaReferenceNo,
+            taxPayableOrRefund: taxPayableOrRefund !== undefined ? taxPayableOrRefund : p.taxPayableOrRefund,
+            submissionReceiptName: submissionReceiptName || p.submissionReceiptName,
+            submittedBy,
+          }
           : p,
       ),
     )
