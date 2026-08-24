@@ -19,6 +19,7 @@ import type {
   WalletTransaction,
 } from './types'
 import { defaultChecklistForService } from './matterChecklists'
+import { obligationTypes } from './obligationTypes'
 
 export const TODAY = '2026-07-21'
 
@@ -102,16 +103,39 @@ export const clientDocuments: ClientDocument[] = [
 ]
 
 
-export const reminderRules: ReminderRule[] = documentTypes
-  .filter((t) => t.hasExpiry)
-  .map((t, i) => ({
-    id: `rr-${i + 1}`,
-    typeId: t.id,
-    typeName: t.name,
+/**
+ * Reminder rules for document expiry AND filing deadlines.
+ *
+ * Filing rules are listed first because the practice's primary work is returns,
+ * not licences. Document defaults are left as they are — a passport genuinely
+ * wants 90 days' notice and a VAT return does not.
+ */
+export const reminderRules: ReminderRule[] = [
+  ...obligationTypes.map((t, i) => ({
+    id: `rr-ob-${i + 1}`,
+    subjectKind: 'obligation' as const,
+    subjectTypeId: t.id,
+    subjectName: t.name,
     daysBefore: t.defaultReminderDays,
     channels: t.defaultChannels,
+    // Filing deadlines need chasing on both sides: the client owes records, the
+    // firm owes the submission.
+    audience: 'both' as const,
     enabled: true,
-  }))
+  })),
+  ...documentTypes
+    .filter((t) => t.hasExpiry)
+    .map((t, i) => ({
+      id: `rr-doc-${i + 1}`,
+      subjectKind: 'document' as const,
+      subjectTypeId: t.id,
+      subjectName: t.name,
+      daysBefore: t.defaultReminderDays,
+      channels: t.defaultChannels,
+      audience: 'client' as const,
+      enabled: true,
+    })),
+]
 
 export const reminderLog: ReminderLogEntry[] = [
   { id: 'rl1', clientId: 'c1', subject: 'Trade License expires in 7 days', channel: 'whatsapp', sentAt: '2026-07-21T09:00:00', status: 'delivered' },

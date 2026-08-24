@@ -1,6 +1,6 @@
 # Phase 6 — Unified Reminder Engine
 
-**Status:** pending · **Depends on:** Phase 1, 2, 4 · **UI changes:** reminders page rework
+**Status:** DONE (2026-08-24) · **Depends on:** Phase 1, 2, 4 · **UI changes:** reminders page rework
 
 The requirement is "notify before expiry **and** before the renewal date
 arrives". Today only the first half is possible: `ReminderRule.typeId` points
@@ -160,3 +160,64 @@ progress animation implying real delivery.
 
 Real delivery (no backend), a scheduler, penalty-fee automation — the penalty
 rules in the business doc are explicitly the next plan.
+
+---
+
+## Implementation notes (written after the phase landed)
+
+### The frozen-clock bug, fixed at the root this time
+
+This is the third phase where the seed's `TODAY` (a fixed authoring date) fought
+`daysUntil`'s real system clock. Phase 2 flagged it, Phase 4 tripped over it in
+`groupFor`, and here it would have made one page count down to a filing while
+another called it overdue.
+
+Added `todayIso()` to `src/lib/utils.ts` — today from the real clock, as an ISO
+date. The reminder engine and the log both use it. `TODAY` is now purely a
+seed-authoring constant, which is what it always should have been.
+
+The log had it wrong in the first build: a reminder fired on 24 Aug was stamped
+`21 Jul 2026`, the seed's date. Anyone auditing "did we warn them before the
+deadline" would have read a false date.
+
+### Reminders are derived; the log is stored
+
+`dueReminders()` in `src/data/reminders.ts` is a pure function over rules,
+documents, filing periods and dates. Same reasoning as `FilingPeriod.state`: a
+stored "a reminder is due" flag goes stale the moment the clock moves.
+
+A reminder fires when days-remaining **exactly equals** a milestone, not "within"
+— otherwise every milestone re-fires every day once a deadline is close.
+
+### A double-send gap the browser check caught
+
+Logging a reminder left the row looking unsent, so the lawyer could send the same
+chase repeatedly. `dueReminders` now takes the log and sets `alreadySentAt` when
+the same target was logged today; the row shows a green badge and a disabled
+*"Sent today"*. Keyed on the filing period or document, not the rule — a reminder
+is the same reminder when it is about the same thing on the same day, whichever
+rule produced it.
+
+### `upcomingForRule` exists so rules do not look broken
+
+With exact-milestone matching, most rules fire on no given day. A rules page
+showing only that reads as "nothing works". Each row now shows its 90-day
+coverage instead — *"5 within the next 90 days"* / *"nothing due in the next 90
+days"*.
+
+### Audience
+
+`internal` disables the channel picker entirely, with copy explaining why: an
+internal reminder is a worklist entry, not a message, so channels are
+meaningless. Seeded filing rules are `both`; migrated document rules are
+`client`.
+
+### Migration, not another storage bump
+
+Rules persisted before this phase keyed on `typeId` / `typeName`.
+`migrateReminderRules()` maps them on load with `subjectKind: 'document'` and
+`audience: 'client'`. Phase 2 already bumped `STORAGE_KEY` once; a second bump
+would have discarded demo data a tester had just built up.
+
+The reminder log also became a persisted, writable slice — it was read-only
+seed data before, so a logged reminder would not have survived reload.

@@ -20,6 +20,18 @@ export function formatDate(iso: string) {
   })
 }
 
+/**
+ * Today as an ISO date, from the real clock.
+ *
+ * `TODAY` in mockData is a frozen seed-authoring constant, not the current date.
+ * Anything that asks "what is due now" must use this — mixing the two makes one
+ * page call a filing overdue while another counts down to it.
+ */
+export function todayIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function daysUntil(iso: string) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)

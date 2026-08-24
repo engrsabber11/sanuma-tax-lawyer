@@ -1,9 +1,9 @@
 # Tax Year & Filing Obligation Engine — Execution Status
 
 **Last updated:** 2026-08-24
-**Overall:** **5 of 8 phases complete** — the spine is built, onboarding
-generates the calendar, the lawyer has a worklist, and tax years can be closed
-and reopened with a trail.
+**Overall:** **6 of 8 phases complete** — the spine is built, onboarding
+generates the calendar, the lawyer has a worklist, tax years close and reopen
+with a trail, and reminders now fire on filing deadlines as well as documents.
 
 Also merged `origin/master` (PR #1, Muhammad Hannan) into this line of work —
 see the merge note below.
@@ -23,7 +23,7 @@ with "done" — the `matters-scale` plan's `PROGRESS.md` is the model to follow.
 | 3 | Onboarding rebuilt around obligations | `phases/PHASE-03-onboarding.md` | **done** | Both sample certificates reproduced through the UI; 3 inputs per registration card; step 4 has 0 inputs; 0 console errors. Output below. |
 | 4 | Filings page | `phases/PHASE-04-filings-page.md` | **done** | `/filings` live; filter counts recorded below; 16 routes, 0 console errors. |
 | 5 | Compliance tab + year close/reopen | `phases/PHASE-05-compliance-tab-and-year.md` | **done** | Close blocked at 3 outstanding; reopen needs a reason; audit persists. Output below. |
-| 6 | Unified reminder engine | `phases/PHASE-06-reminder-engine.md` | pending | — |
+| 6 | Unified reminder engine | `phases/PHASE-06-reminder-engine.md` | **done** | 21 rules (6 filing + 15 migrated document); T-7 milestone verified by hand; 16 routes, 0 console errors. |
 | 7 | Filing → Matter → Invoice chain | `phases/PHASE-07-filing-matter-invoice.md` | pending | — |
 | 8 | Dashboard, vault, settings, cleanup | `phases/PHASE-08-dashboard-and-cleanup.md` | pending | — |
 
@@ -351,6 +351,68 @@ VAT and Corporate Tax has two real TRNs that one client-level field cannot
 express. `Registration.registrationNumber` is the right home; removing
 `Client.trn` touches the header, `EditClientModal`, `ClientsList` and the seed,
 so it is flagged rather than folded into this phase.
+
+---
+
+## Phase 6 - verified output (2026-08-24)
+
+`tsc -b` clean * lint 13 findings, all pre-existing * 16 routes, **0 console
+errors** * `package.json` unchanged.
+
+### Rules page: filing deadlines first, documents migrated
+
+```
+total rule rows: 21
+
+VAT Return                  | 5 within the next 90 days       | T-60 T-30 T-15 T-7 On the day  Both
+VAT Return (Monthly Filer)  | 3 within the next 90 days       | T-30 T-15 T-7 On the day       Both
+Corporate Tax Return        | 3 within the next 90 days       | T-60 T-30 T-15 T-7 On the day  Both
+Excise Tax Return           | nothing due in the next 90 days | T-30 T-15 T-7 On the day       Both
+ESR Notification            | nothing due in the next 90 days | T-60 T-30 T-7 On the day       Both
+ESR Report                  | nothing due in the next 90 days | T-60 T-30 T-7 On the day       Both
+Emirates ID                 | 1 within the next 90 days       | T-60 T-30 T-7                  Client
+Passport                    | nothing due in the next 90 days | T-90 T-30                      Client
+```
+
+6 filing rules first, then 15 migrated document rules. Document milestones left
+untouched - a passport genuinely wants 90 days and a VAT return does not.
+
+### The milestone verified by hand
+
+```
+Would fire on 24 Aug 2026
+  VAT Return May-Jul 2026 is due in 7 days
+  Rashid Mart * T-7 * due 31 Aug 2026
+```
+
+c3 is the `feb-may-aug-nov` stagger client. Its May-Jul 2026 period is due
+31 Aug, which is exactly 7 days from 24 Aug - the T-7 milestone, hit exactly.
+
+### Actions
+
+| Check | Result |
+|---|---|
+| Log as sent | button becomes disabled **"Sent today"**, badge turns green |
+| After reload | still shows "Sent today" - log persists |
+| Log row | `VAT Return May-Jul 2026 ... | Mohammed Rashid | May-Jul 2026 | Email | 24 Aug 2026 | sent` |
+| Toggle VAT Return rule off | Due Today count 2 -> 1; back on -> 2 |
+| Audience = internal | channel picker disabled with an explanation |
+| Closed year / filed period | produces no reminders |
+
+### Two defects the browser check caught
+
+1. **The log stamped the wrong date.** A reminder that fired on 24 Aug was
+   recorded as `21 Jul 2026` - the seed's frozen `TODAY`. Anyone auditing
+   "did we warn them before the deadline" would have read a false date.
+2. **Double-send was possible.** After logging a reminder the row still read as
+   outstanding, so the same chase could be sent repeatedly. Now marked
+   `alreadySentAt` and disabled.
+
+### The frozen-clock bug fixed at the root
+
+Third phase running into `TODAY` vs the real clock. `todayIso()` now lives in
+`src/lib/utils.ts` and is the single answer to "what is today"; `TODAY` is purely
+a seed-authoring constant. Worth doing before it caused a fourth.
 
 ---
 

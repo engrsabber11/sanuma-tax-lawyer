@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import * as seed from './mockData'
 import type {
   AuditEntry,
+  Channel,
   Client,
   ClientDocument,
   ClientYear,
@@ -22,12 +23,13 @@ import type {
   Quote,
   ReferralBonusRule,
   Registration,
+  ReminderAudience,
   ReminderLogEntry,
   ReminderRule,
   Service,
   WalletTransaction,
 } from './types'
-import { addDays, genId, urgencyFromDate } from '../lib/utils'
+import { addDays, genId, todayIso, urgencyFromDate } from '../lib/utils'
 import { invoiceTotal } from '../lib/invoice'
 import { defaultChecklistForService } from './matterChecklists'
 import { obligationTypes as seedObligationTypes } from './obligationTypes'
@@ -139,6 +141,18 @@ interface DataContextValue {
   applyWalletToInvoice: (clientId: string, invoiceId: string, amount: number) => void
 
   updateReminderRule: (id: string, patch: Partial<ReminderRule>) => void
+  /**
+   * Records that a reminder went out. There is no real delivery in this
+   * prototype — this appends the log entry that answers "did we warn them".
+   */
+  logReminderSent: (input: {
+    clientId: string
+    subject: string
+    channels: Channel[]
+    audience: ReminderAudience
+    filingPeriodId?: string
+    documentId?: string
+  }) => void
   toggleReminderRule: (id: string) => void
 
   updateReferralBonusRule: (level: number, patch: Partial<ReferralBonusRule>) => void
@@ -177,6 +191,7 @@ interface PersistedState {
   clientYears?: ClientYear[]
   auditLog?: AuditEntry[]
   reminderRules?: ReminderRule[]
+  reminderLog?: ReminderLogEntry[]
   matters?: Matter[]
   services?: Service[]
   quotes?: Quote[]
@@ -198,6 +213,31 @@ function loadPersisted(): PersistedState {
   } catch {
     return {}
   }
+}
+
+/**
+ * Rules persisted before Phase 6 keyed on `typeId` / `typeName` and only ever
+ * watched documents. Migrated in place rather than bumping STORAGE_KEY again —
+ * Phase 2 already bumped it once, and a second wipe would discard the demo data
+ * a tester had just set up.
+ */
+interface LegacyReminderRule {
+  typeId?: string
+  typeName?: string
+}
+
+function migrateReminderRules(rules: ReminderRule[]): ReminderRule[] {
+  return rules.map((r) => {
+    if (r.subjectKind) return r
+    const legacy = r as ReminderRule & LegacyReminderRule
+    return {
+      ...r,
+      subjectKind: 'document',
+      subjectTypeId: legacy.subjectTypeId ?? legacy.typeId ?? '',
+      subjectName: legacy.subjectName ?? legacy.typeName ?? 'Document',
+      audience: r.audience ?? 'client',
+    }
+  })
 }
 
 function currentTaxYear(): number {
@@ -252,8 +292,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   )
   const [clientYears, setClientYears] = useState<ClientYear[]>(persisted.clientYears ?? [])
   const [auditLog, setAuditLog] = useState<AuditEntry[]>(persisted.auditLog ?? [])
-  const [reminderRules, setReminderRules] = useState<ReminderRule[]>(persisted.reminderRules ?? seed.reminderRules)
-  const [reminderLog] = useState<ReminderLogEntry[]>(seed.reminderLog)
+  const [reminderRules, setReminderRules] = useState<ReminderRule[]>(() =>
+    migrateReminderRules(persisted.reminderRules ?? seed.reminderRules),
+  )
+  const [reminderLog, setReminderLog] = useState<ReminderLogEntry[]>(persisted.reminderLog ?? seed.reminderLog)
   // State saved before these fields existed is migrated on load: no checklist → empty,
   // no clientInitiated → treated as client-initiated, so nothing is retro-penalised.
   const [matters, setMattersState] = useState<Matter[]>(
@@ -286,6 +328,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clientYears,
       auditLog,
       reminderRules,
+      reminderLog,
       matters,
       services,
       quotes,
@@ -310,6 +353,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     clientYears,
     auditLog,
     reminderRules,
+    reminderLog,
     matters,
     services,
     quotes,
@@ -368,7 +412,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (input.hasExpiry) {
       setReminderRules((prev) => [
         ...prev,
-        { id: genId('rr'), typeId: id, typeName: input.name, daysBefore: input.defaultReminderDays, channels: input.defaultChannels, enabled: true },
+        {
+          id: genId('rr'),
+          subjectKind: 'document',
+          subjectTypeId: id,
+          subjectName: input.name,
+          daysBefore: input.defaultReminderDays,
+          channels: input.defaultChannels,
+          audience: 'client',
+          enabled: true,
+        },
       ])
     }
   }
@@ -788,6 +841,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
     recordPayment(invoiceId, amount)
   }
 
+  function logReminderSent(input: {
+    clientId: string
+    subject: string
+    channels: Channel[]
+    audience: ReminderAudience
+    filingPeriodId?: string
+    documentId?: string
+  }) {
+    // One entry per channel — the log answers "which channel reached them", and
+    // a single row spanning three channels cannot.
+    const entries: ReminderLogEntry[] = input.channels.map((channel) => ({
+      id: genId('rl'),
+      clientId: input.clientId,
+      subject: input.subject,
+      channel,
+      // The real clock — a reminder that fired today must not be stamped with
+      // the seed's authoring date.
+      sentAt: `${todayIso()}T09:00:00`,
+      status: 'sent',
+      audience: input.audience,
+      filingPeriodId: input.filingPeriodId,
+      documentId: input.documentId,
+    }))
+    setReminderLog((prev) => [...prev, ...entries])
+  }
+
   function updateReminderRule(id: string, patch: Partial<ReminderRule>) {
     setReminderRules((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
@@ -866,6 +945,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addWalletTransaction,
         applyWalletToInvoice,
         updateReminderRule,
+        logReminderSent,
         toggleReminderRule,
         updateReferralBonusRule,
         updateFirmProfile,

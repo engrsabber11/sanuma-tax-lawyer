@@ -47,12 +47,30 @@ export interface ClientDocument {
 
 export type Channel = 'whatsapp' | 'email' | 'sms'
 
+/** What a reminder rule watches: a document's expiry, or a filing's due date. */
+export type ReminderSubjectKind = 'document' | 'obligation'
+
+/**
+ * Who a reminder is for.
+ *
+ * 'client' and 'internal' are different jobs: a client reminder says "send us
+ * your records"; an internal one says "this return is due in a week and nobody
+ * has opened a matter for it". The lawyer needs the second even when the client
+ * has already been chased.
+ */
+export type ReminderAudience = 'client' | 'internal' | 'both'
+
 export interface ReminderRule {
   id: string
-  typeId: string
-  typeName: string
+  subjectKind: ReminderSubjectKind
+  /** DocumentTypeDef.id or ObligationType.id, per subjectKind. */
+  subjectTypeId: string
+  /** Denormalised for display, as typeName was before. */
+  subjectName: string
+  /** Days before the target date. 0 = D-Day. */
   daysBefore: number[]
   channels: Channel[]
+  audience: ReminderAudience
   enabled: boolean
 }
 
@@ -63,6 +81,14 @@ export interface ReminderLogEntry {
   channel: Channel
   sentAt: string
   status: 'sent' | 'delivered' | 'failed'
+  audience?: ReminderAudience
+  /**
+   * What the reminder was about. This is what answers "did we warn this client
+   * before the deadline" per filing — the question that matters when a client
+   * disputes a penalty.
+   */
+  filingPeriodId?: string
+  documentId?: string
 }
 
 export type MatterStatus = 'intake' | 'documents-collected' | 'in-progress' | 'submitted' | 'completed'
