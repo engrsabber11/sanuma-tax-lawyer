@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import * as seed from './mockData'
 import type {
+  AuditEntry,
   Client,
   ClientDocument,
   ClientYear,
@@ -47,6 +48,12 @@ interface FirmProfile {
   address: string
   phone: string
   email: string
+  /**
+   * Whether reopening a closed tax year demands a typed reason.
+   * Default on — see plans/tax-year-engine open decision #1. Turning it off
+   * removes the prompt, never the audit entry.
+   */
+  requireReopenReason: boolean
 }
 
 interface DataContextValue {
@@ -57,6 +64,7 @@ interface DataContextValue {
   registrations: Registration[]
   filingPeriods: FilingPeriod[]
   clientYears: ClientYear[]
+  auditLog: AuditEntry[]
   reminderRules: ReminderRule[]
   reminderLog: ReminderLogEntry[]
   matters: Matter[]
@@ -97,6 +105,11 @@ interface DataContextValue {
   markFilingFiled: (filingPeriodId: string, filedAt?: string) => void
   markFilingNotRequired: (filingPeriodId: string) => void
   openClientYear: (clientId: string, taxYear: number) => void
+  closeClientYear: (clientId: string, taxYear: number) => void
+  reopenClientYear: (clientId: string, taxYear: number, reason: string) => void
+  /** Returns the count so a disabled button can say *why*, not just be dead. */
+  canCloseClientYear: (clientId: string, taxYear: number) => { ok: boolean; pendingCount: number }
+  revertFilingToPending: (filingPeriodId: string) => void
 
   addMatter: (input: { clientId: string; title: string; serviceId: string; dueDate?: string; clientInitiated?: boolean }) => Matter
   updateMatter: (id: string, patch: Partial<Matter>) => void
@@ -142,6 +155,15 @@ const AVATAR_COLORS = ['bg-accent-500', 'bg-warning-500', 'bg-success-500', 'bg-
  * render an app whose compliance spine is empty while every other slice looks
  * populated — worse than a clean reseed, and harder to diagnose.
  */
+const DEFAULT_FIRM_PROFILE: FirmProfile = {
+  name: 'Sanuma Tax Advisory FZE',
+  trn: '100234567800003',
+  address: 'Office 1402, Prism Tower, Business Bay, Dubai, UAE',
+  phone: '+971 4 123 4567',
+  email: 'info@sanuma-tax.ae',
+  requireReopenReason: true,
+}
+
 const STORAGE_KEY = 'sanuma-app-state-v2'
 const ONBOARDING_DRAFT_KEY = 'sanuma-onboarding-draft'
 
@@ -153,6 +175,7 @@ interface PersistedState {
   registrations?: Registration[]
   filingPeriods?: FilingPeriod[]
   clientYears?: ClientYear[]
+  auditLog?: AuditEntry[]
   reminderRules?: ReminderRule[]
   matters?: Matter[]
   services?: Service[]
@@ -228,6 +251,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     () => persisted.filingPeriods ?? buildSeedFilingPeriods(hydrateSeedRegistrations(), persisted.obligationTypes ?? seedObligationTypes),
   )
   const [clientYears, setClientYears] = useState<ClientYear[]>(persisted.clientYears ?? [])
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>(persisted.auditLog ?? [])
   const [reminderRules, setReminderRules] = useState<ReminderRule[]>(persisted.reminderRules ?? seed.reminderRules)
   const [reminderLog] = useState<ReminderLogEntry[]>(seed.reminderLog)
   // State saved before these fields existed is migrated on load: no checklist → empty,
@@ -246,13 +270,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [penaltyFeeRule, setPenaltyFeeRule] = useState<PenaltyFeeRule>(persisted.penaltyFeeRule ?? seed.penaltyFeeRule)
   const [pendingCharges, setPendingCharges] = useState<PendingCharge[]>(persisted.pendingCharges ?? seed.pendingCharges)
   const [firmProfile, setFirmProfile] = useState<FirmProfile>(
-    persisted.firmProfile ?? {
-      name: 'Sanuma Tax Advisory FZE',
-      trn: '100234567800003',
-      address: 'Office 1402, Prism Tower, Business Bay, Dubai, UAE',
-      phone: '+971 4 123 4567',
-      email: 'info@sanuma-tax.ae',
-    },
+    // Spread over the default so a profile persisted before a field existed
+    // still gets it, rather than arriving as undefined.
+    { ...DEFAULT_FIRM_PROFILE, ...(persisted.firmProfile ?? {}) },
   )
 
   useEffect(() => {
@@ -264,6 +284,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       registrations,
       filingPeriods,
       clientYears,
+      auditLog,
       reminderRules,
       matters,
       services,
@@ -287,6 +308,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     registrations,
     filingPeriods,
     clientYears,
+    auditLog,
     reminderRules,
     matters,
     services,
@@ -431,6 +453,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
 
   function updateRegistration(id: string, patch: Partial<Registration>) {
+    const before = registrations.find((r) => r.id === id)
+    if (before) {
+      addAuditEntry({
+        action: 'registration-edited',
+        clientId: before.clientId,
+        subject: obligationTypes.find((t) => t.id === before.obligationTypeId)?.name ?? 'Registration',
+      })
+    }
     setRegistrations((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r
@@ -470,6 +500,69 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setFilingPeriods((prev) =>
       prev.map((p) => (p.id === filingPeriodId ? { ...p, state: 'not-required', filedAt: undefined } : p)),
     )
+  }
+
+  function addAuditEntry(input: Omit<AuditEntry, 'id' | 'at' | 'actor'>) {
+    setAuditLog((prev) => [
+      ...prev,
+      { id: genId('au'), at: `${TODAY}T00:00:00`, actor: firmProfile.name, ...input },
+    ])
+  }
+
+  /**
+   * A year can close only when nothing in it is still pending. There is
+   * deliberately no force-close: a year closed over unfiled returns is a false
+   * statement about the client's compliance, and the record's only value is
+   * that it can be trusted.
+   */
+  function canCloseClientYear(clientId: string, taxYear: number) {
+    const pendingCount = filingPeriods.filter(
+      (p) => p.clientId === clientId && p.taxYear === taxYear && p.state === 'pending',
+    ).length
+    return { ok: pendingCount === 0, pendingCount }
+  }
+
+  function closeClientYear(clientId: string, taxYear: number) {
+    if (!canCloseClientYear(clientId, taxYear).ok) return
+    setClientYears((prev) => {
+      const exists = prev.some((y) => y.clientId === clientId && y.taxYear === taxYear)
+      const closed: ClientYear = { clientId, taxYear, status: 'closed', closedAt: TODAY }
+      return exists
+        ? prev.map((y) => (y.clientId === clientId && y.taxYear === taxYear ? { ...y, ...closed } : y))
+        : [...prev, closed]
+    })
+    addAuditEntry({ action: 'year-closed', clientId, subject: `Tax year ${taxYear}` })
+  }
+
+  function reopenClientYear(clientId: string, taxYear: number, reason: string) {
+    setClientYears((prev) =>
+      prev.map((y) =>
+        y.clientId === clientId && y.taxYear === taxYear
+          ? { ...y, status: 'open', reopenedAt: TODAY, reopenReason: reason || undefined, closedAt: undefined }
+          : y,
+      ),
+    )
+    addAuditEntry({ action: 'year-reopened', clientId, subject: `Tax year ${taxYear}`, note: reason || undefined })
+  }
+
+  /**
+   * Amended returns are routine. Reverting keeps matterId and invoiceId intact,
+   * and the period stays locked against regeneration for the same reason it was
+   * locked when filed.
+   */
+  function revertFilingToPending(filingPeriodId: string) {
+    const period = filingPeriods.find((p) => p.id === filingPeriodId)
+    setFilingPeriods((prev) =>
+      prev.map((p) => (p.id === filingPeriodId ? { ...p, state: 'pending', filedAt: undefined } : p)),
+    )
+    if (period) {
+      addAuditEntry({
+        action: 'filing-reverted',
+        clientId: period.clientId,
+        subject: period.label,
+        note: 'Reopened for amendment',
+      })
+    }
   }
 
   function openClientYear(clientId: string, taxYear: number) {
@@ -721,6 +814,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         registrations,
         filingPeriods,
         clientYears,
+        auditLog,
         reminderRules,
         reminderLog,
         services,
@@ -748,6 +842,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         markFilingFiled,
         markFilingNotRequired,
         openClientYear,
+        closeClientYear,
+        reopenClientYear,
+        canCloseClientYear,
+        revertFilingToPending,
         addMatter,
         updateMatter,
         toggleMatterChecklistItem,

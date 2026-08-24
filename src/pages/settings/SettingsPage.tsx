@@ -56,6 +56,7 @@ export function SettingsPage() {
           { id: 'profile', label: 'Business Profile' },
           { id: 'doctypes', label: 'Document Types', count: documentTypes.length },
           { id: 'billing', label: 'Billing Rules' },
+          { id: 'compliance', label: 'Compliance' },
           { id: 'team', label: 'Team & Access' },
           { id: 'preferences', label: 'Preferences' },
         ]}
@@ -196,6 +197,34 @@ export function SettingsPage() {
             </div>
             <div className="flex justify-end">
               <Button onClick={savePenaltyRule}>Save Billing Rules</Button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {tab === 'compliance' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Tax Year Controls</CardTitle>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-4 pt-2">
+            <p className="text-sm text-ink-500 dark:text-ink-400">
+              A tax year can only be closed once every filing in it is filed or marked not required — there is no
+              force-close, because a year closed over unfiled returns is a false statement about the client&rsquo;s
+              compliance.
+            </p>
+            <div className="flex items-center justify-between rounded-xl border border-ink-200/70 p-4 dark:border-ink-800">
+              <div className="pr-4">
+                <p className="text-sm font-medium text-ink-800 dark:text-ink-100">Require a reason when reopening a closed year</p>
+                <p className="text-xs text-ink-400">
+                  Turning this off removes the prompt only. Every close and reopen is still written to the
+                  client&rsquo;s compliance history — that record is not optional.
+                </p>
+              </div>
+              <Switch
+                checked={firmProfile.requireReopenReason}
+                onChange={() => updateFirmProfile({ requireReopenReason: !firmProfile.requireReopenReason })}
+              />
             </div>
           </CardBody>
         </Card>

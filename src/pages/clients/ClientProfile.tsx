@@ -18,6 +18,7 @@ import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge, UrgencyBadge } from '../../components/ui/Badge'
 import { Avatar } from '../../components/ui/Avatar'
 import { Tabs } from '../../components/ui/Tabs'
+import { ClientComplianceTab } from '../../components/compliance/ClientComplianceTab'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { EditClientModal } from '../../components/modals/EditClientModal'
@@ -31,9 +32,13 @@ export function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { clients, clientDocuments, obligationTypes, filingPeriods, documentTypes, matters, invoices, walletTransactions, services, pendingChargesForClient } = useData()
+  const { clients, clientDocuments, obligationTypes, filingPeriods, registrations, documentTypes, matters, invoices, walletTransactions, services, pendingChargesForClient } = useData()
   const client = clients.find((c) => c.id === id)
-  const [tab, setTab] = useState(params.get('tab') ?? 'overview')
+  // A tax client's profile opens on Compliance — that is the work. Clients
+  // without registrations still open on Overview.
+  const [tab, setTab] = useState(
+    params.get('tab') ?? (registrations.some((r) => r.clientId === id) ? 'compliance' : 'overview'),
+  )
   const [editOpen, setEditOpen] = useState(false)
   const [newMatterOpen, setNewMatterOpen] = useState(false)
   const [walletModal, setWalletModal] = useState<'withdraw' | 'apply' | null>(null)
@@ -41,6 +46,7 @@ export function ClientProfile() {
   const docs = clientDocuments.filter((d) => d.clientId === id)
   // Phase 5 gives these their own Compliance tab; for now they keep the shape
   // the Documents tab already renders.
+  const clientRegistrations = registrations.filter((r) => r.clientId === id)
   const clientFilings = filingPeriods.filter((p) => p.clientId === id)
   const filedCount = clientFilings.filter((p) => p.state === 'filed').length
   // Outstanding only. A client registered in 2019 has ~36 periods, and listing
@@ -167,7 +173,8 @@ export function ClientProfile() {
         onChange={changeTab}
         tabs={[
           { id: 'overview', label: 'Overview' },
-          { id: 'documents', label: 'Documents', count: docs.length + deadlines.length },
+          { id: 'compliance', label: 'Compliance', count: clientRegistrations.length || undefined },
+          { id: 'documents', label: 'Documents', count: docs.length },
           { id: 'matters', label: 'Matters', count: clientMatters.length },
           { id: 'invoices', label: 'Invoices', count: clientInvoices.length },
           { id: 'referrals', label: 'Referral Tree', count: directReferrals.length + subReferrals.length },
@@ -216,6 +223,8 @@ export function ClientProfile() {
           </Card>
         </div>
       )}
+
+      {tab === 'compliance' && client && <ClientComplianceTab clientId={client.id} clientName={client.name} />}
 
       {tab === 'documents' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

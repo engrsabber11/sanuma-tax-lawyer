@@ -1,8 +1,9 @@
 # Tax Year & Filing Obligation Engine — Execution Status
 
 **Last updated:** 2026-08-24
-**Overall:** **4 of 8 phases complete** — the spine is built, onboarding
-generates the calendar, and the lawyer has a worklist to run it from.
+**Overall:** **5 of 8 phases complete** — the spine is built, onboarding
+generates the calendar, the lawyer has a worklist, and tax years can be closed
+and reopened with a trail.
 
 Also merged `origin/master` (PR #1, Muhammad Hannan) into this line of work —
 see the merge note below.
@@ -21,7 +22,7 @@ with "done" — the `matters-scale` plan's `PROGRESS.md` is the model to follow.
 | 2 | Store wiring, seed rewrite, migration | `phases/PHASE-02-store-and-seed.md` | **done** | 223 periods from 10 registrations; 0 `ComplianceDeadline` refs; 12 routes, 0 console errors. Output below. |
 | 3 | Onboarding rebuilt around obligations | `phases/PHASE-03-onboarding.md` | **done** | Both sample certificates reproduced through the UI; 3 inputs per registration card; step 4 has 0 inputs; 0 console errors. Output below. |
 | 4 | Filings page | `phases/PHASE-04-filings-page.md` | **done** | `/filings` live; filter counts recorded below; 16 routes, 0 console errors. |
-| 5 | Compliance tab + year close/reopen | `phases/PHASE-05-compliance-tab-and-year.md` | pending | — |
+| 5 | Compliance tab + year close/reopen | `phases/PHASE-05-compliance-tab-and-year.md` | **done** | Close blocked at 3 outstanding; reopen needs a reason; audit persists. Output below. |
 | 6 | Unified reminder engine | `phases/PHASE-06-reminder-engine.md` | pending | — |
 | 7 | Filing → Matter → Invoice chain | `phases/PHASE-07-filing-matter-invoice.md` | pending | — |
 | 8 | Dashboard, vault, settings, cleanup | `phases/PHASE-08-dashboard-and-cleanup.md` | pending | — |
@@ -304,6 +305,52 @@ GROUPS  Overdue 5 | Due within 30 days 2 | Next 90 days 6 | Later 12 | Filed 9
 | Open matter | `NewMatterModal` opens pre-filled; existing matter navigates instead |
 | Command palette `"Aug–Oct"` | 3 filing hits |
 | Send reminder | rendered **disabled** — Phase 6 wires it, no fake send |
+
+---
+
+## Phase 5 - verified output (2026-08-24)
+
+`tsc -b` clean * lint 13 findings, all pre-existing * **0 console errors** *
+`package.json` unchanged.
+
+### Close / reopen rules
+
+```
+c1 year header : 4 filings * 1 filed * 3 outstanding
+close blocked  : disabled=true
+                 "3 filings still outstanding - a year cannot close over unfiled returns."
+after filing 3 : close disabled=false
+year closed    : badge=Closed | read-only note shown | row actions gone
+audit          : "Tax year closed - Tax year 2026"
+
+reopen, blank reason : error "at least 10 characters", modal stays open
+reopen with reason   : badge=Open | row actions back
+audit                : "Tax year reopened - Tax year 2026
+                        'FTA raised a query on the Apr-Jun return and it needs amending'
+                        by Sanuma Tax Advisory FZE"
+
+after reload   : still open, 2 audit entries persisted
+```
+
+### Registrations
+
+| Case | Result |
+|---|---|
+| c1 registration card | `Quarterly * Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec`, TRN, effective date, first period, period count |
+| c8 (VAT + CT) | 2 cards - `VAT Return`, `Corporate Tax Return` |
+| c8 add-registration | offers only `VAT Return (Monthly Filer)`, `Excise`, `ESR Notification`, `ESR Report` - existing two excluded |
+| c7 (licence-only) | opens on Overview; Compliance tab shows empty state + Add button |
+| Add CT to c7, effective 2025-02-01 | live derivation `01 Feb 2025 - 31 Dec 2025 * due 30 Sept 2026`; 4 periods generated |
+| Settings -> Compliance | reason toggle present, with the "that record is not optional" note |
+
+### Follow-up raised
+
+`Client.trn` and `Registration.registrationNumber` now both hold TRNs, and the
+profile header can disagree with the registration cards below it. A client with
+VAT and Corporate Tax has two real TRNs that one client-level field cannot
+express. `Registration.registrationNumber` is the right home; removing
+`Client.trn` touches the header, `EditClientModal`, `ClientsList` and the seed,
+so it is flagged rather than folded into this phase.
 
 ---
 

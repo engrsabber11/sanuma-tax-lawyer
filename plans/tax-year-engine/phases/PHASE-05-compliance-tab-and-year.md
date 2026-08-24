@@ -1,6 +1,6 @@
 # Phase 5 — Client Compliance Tab + Tax Year Open / Close / Reopen
 
-**Status:** pending · **Depends on:** Phase 1, 2, 3 · **UI changes:** new tab + modal
+**Status:** DONE (2026-08-24) · **Depends on:** Phase 1, 2, 3 · **UI changes:** new tab + modal
 
 Implements the "work is added per year, and a year can be reopened later"
 requirement — the one the client explicitly left undecided.
@@ -150,3 +150,64 @@ dead.
 
 Reminders (Phase 6), matter/invoice chain (Phase 7), a firm-wide audit page —
 the per-client timeline is enough for now.
+
+---
+
+## Implementation notes (written after the phase landed)
+
+### Open decision #1 resolved as recommended
+
+Reopen requires a typed reason (min 10 characters), gated by a new
+`firmProfile.requireReopenReason` flag, default on, toggleable at
+**Settings -> Compliance**. Turning it off removes the prompt only - the audit
+entry is written either way. The Settings copy says so explicitly: *"that record
+is not optional"*.
+
+Close has no force option. The button is disabled with the outstanding count in
+both a tooltip and an inline line (*"3 filings still outstanding - a year cannot
+close over unfiled returns"*), because a year closed over unfiled returns is a
+false statement about the client's compliance.
+
+### The tab lives in its own file, not in ClientProfile
+
+`ClientProfile.tsx` was already 400+ lines before this phase and had just
+absorbed the sub-referrer merge. The Compliance tab is
+`src/components/compliance/ClientComplianceTab.tsx`; the profile gains one tab
+entry and one line of JSX.
+
+The profile now **defaults to the Compliance tab** when the client has
+registrations, and Overview otherwise. For a tax client that tab is the work.
+
+### `AddRegistrationModal` reuses `RegistrationFields`
+
+Rather than re-implementing the three-field form, the modal renders the same
+component the wizard uses. That keeps the three-field cap enforced in one place
+instead of drifting between two screens, and the live first-period derivation
+comes along for free. It also filters out obligations the client already has -
+a second VAT Return registration on one client is not a thing.
+
+### Registration edits warn before saving
+
+Phase 2's regeneration already protects filed history; this phase tells the
+lawyer what will happen first: *"N future periods will be rescheduled. M filed
+or billed periods are unaffected - their dates are what was filed with the FTA
+and are never rewritten."*
+
+### `Client.trn` is now redundant - flagged, not changed
+
+The profile header still shows `Client.trn` (`10034**********` in the seed)
+while the registration card shows `Registration.registrationNumber`
+(`100341234500003`). Two fields now hold the same kind of value, and a client
+with both VAT and Corporate Tax has two real TRNs that one field cannot express.
+
+`Registration.registrationNumber` is the correct home. Removing `Client.trn`
+touches the profile header, `EditClientModal`, `ClientsList` and the seed, so it
+is left for a follow-up rather than widened into this phase. Worth doing -
+today the header can disagree with the registrations below it.
+
+### A lint warning fixed rather than added to
+
+`AddRegistrationModal`'s reset effect wanted `available` in its dependency
+array. Instead of suppressing it (the codebase already carries eight such
+warnings), `available` is memoised - registrations only change on submit, which
+closes the modal, so the dependency is honest.

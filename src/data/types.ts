@@ -301,3 +301,20 @@ export interface ClientYear {
   reopenedAt?: string
   reopenReason?: string
 }
+
+/**
+ * Append-only record of tax-year transitions. Follows the shape of
+ * ReminderLogEntry rather than inventing a second log convention.
+ *
+ * The entry is written whether or not the reopen prompt is enabled: losing the
+ * typed reason is a preference, losing the record is a defect.
+ */
+export interface AuditEntry {
+  id: string
+  at: string
+  actor: string
+  action: 'year-closed' | 'year-reopened' | 'registration-edited' | 'filing-reverted'
+  clientId: string
+  subject: string
+  note?: string
+}
