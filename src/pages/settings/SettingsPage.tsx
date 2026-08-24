@@ -3,7 +3,11 @@ import { Plus, Lock, Globe2, Building } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
-import { Input, Label, Textarea } from '../../components/ui/Field'
+import { ErrorText, Input, Label, Textarea, invalidFieldClass } from '../../components/ui/Field'
+import { PhoneInput } from '../../components/ui/PhoneInput'
+import { Switch } from '../../components/ui/Switch'
+import { isUaePhone, UAE_MOBILE_PLACEHOLDER } from '../../lib/phone'
+import { cn } from '../../lib/utils'
 import { Tabs } from '../../components/ui/Tabs'
 import { NewDocumentTypeModal } from '../../components/modals/NewDocumentTypeModal'
 import { useData } from '../../data/store'
@@ -13,19 +17,29 @@ import { Avatar } from '../../components/ui/Avatar'
 const categoryLabel: Record<string, string> = { personal: 'Personal', business: 'Business', tax: 'Tax & Regulatory', financial: 'Financial' }
 
 export function SettingsPage() {
-  const { documentTypes, firmProfile, updateFirmProfile } = useData()
+  const { documentTypes, firmProfile, updateFirmProfile, penaltyFeeRule, updatePenaltyFeeRule } = useData()
   const { show } = useToast()
   const [tab, setTab] = useState('profile')
   const [addTypeOpen, setAddTypeOpen] = useState(false)
   const [draft, setDraft] = useState(firmProfile)
+  const [penaltyDraft, setPenaltyDraft] = useState(penaltyFeeRule)
 
   useEffect(() => {
     setDraft(firmProfile)
   }, [firmProfile])
 
+  useEffect(() => {
+    setPenaltyDraft(penaltyFeeRule)
+  }, [penaltyFeeRule])
+
   function saveProfile() {
     updateFirmProfile(draft)
     show('Business profile updated')
+  }
+
+  function savePenaltyRule() {
+    updatePenaltyFeeRule({ ...penaltyDraft, amount: Math.max(0, penaltyDraft.amount), label: penaltyDraft.label.trim() || penaltyFeeRule.label })
+    show('Billing rules updated')
   }
 
   return (
@@ -41,6 +55,7 @@ export function SettingsPage() {
         tabs={[
           { id: 'profile', label: 'Business Profile' },
           { id: 'doctypes', label: 'Document Types', count: documentTypes.length },
+          { id: 'billing', label: 'Billing Rules' },
           { id: 'team', label: 'Team & Access' },
           { id: 'preferences', label: 'Preferences' },
         ]}
@@ -73,8 +88,14 @@ export function SettingsPage() {
               <Textarea value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} />
             </div>
             <div>
-              <Label>Support Phone</Label>
-              <Input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+              <Label hint="mobile or landline">Support Phone</Label>
+              <PhoneInput
+                value={draft.phone}
+                onChange={(phone) => setDraft({ ...draft, phone })}
+                placeholder="+971 4 123 4567"
+                className={cn(draft.phone && !isUaePhone(draft.phone) && invalidFieldClass)}
+              />
+              {draft.phone && !isUaePhone(draft.phone) && <ErrorText>Enter a UAE number, e.g. +971 4 123 4567 or {UAE_MOBILE_PLACEHOLDER}</ErrorText>}
             </div>
             <div>
               <Label>Support Email</Label>
@@ -123,6 +144,58 @@ export function SettingsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {tab === 'billing' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Firm-Initiated Matter Penalty</CardTitle>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-4 pt-2">
+            <p className="text-sm text-ink-500 dark:text-ink-400">
+              When a matter is opened without client involvement, this minimum fee is queued against the client and added automatically to their next
+              invoice. Changing it here only affects matters opened from now on.
+            </p>
+            <div className="flex items-center justify-between rounded-xl border border-ink-200/70 p-4 dark:border-ink-800">
+              <div>
+                <p className="text-sm font-medium text-ink-800 dark:text-ink-100">Apply penalty fee</p>
+                <p className="text-xs text-ink-400">Turn off to stop charging for firm-initiated matters</p>
+              </div>
+              <Switch checked={penaltyDraft.enabled} onChange={() => setPenaltyDraft({ ...penaltyDraft, enabled: !penaltyDraft.enabled })} />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Minimum Fee (AED)</Label>
+                <Input
+                  type="number"
+                  value={penaltyDraft.amount}
+                  onChange={(e) => setPenaltyDraft({ ...penaltyDraft, amount: parseFloat(e.target.value) || 0 })}
+                  disabled={!penaltyDraft.enabled}
+                />
+              </div>
+              <div className="flex items-end">
+                <div className="flex h-10 w-full items-center justify-between rounded-lg border border-ink-200/70 px-3.5 dark:border-ink-800">
+                  <span className="text-sm font-medium text-ink-700 dark:text-ink-200">VAT Applicable (5%)</span>
+                  <Switch
+                    checked={penaltyDraft.vatApplicable}
+                    onChange={() => setPenaltyDraft({ ...penaltyDraft, vatApplicable: !penaltyDraft.vatApplicable })}
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <Label>Invoice Line Label</Label>
+              <Input
+                value={penaltyDraft.label}
+                onChange={(e) => setPenaltyDraft({ ...penaltyDraft, label: e.target.value })}
+                disabled={!penaltyDraft.enabled}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={savePenaltyRule}>Save Billing Rules</Button>
             </div>
           </CardBody>
         </Card>

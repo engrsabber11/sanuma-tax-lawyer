@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, CornerDownRight } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Label, Select, ErrorText } from '../ui/Field'
 import { useData } from '../../data/store'
+import { effectivePrice, flattenServices } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
 import { cn, formatAED, sleep } from '../../lib/utils'
 
@@ -29,7 +30,7 @@ export function NewQuoteModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const amount = selected.reduce((sum, id) => {
     const s = services.find((x) => x.id === id)
-    return sum + (s ? s.price * 1.05 : 0)
+    return sum + (s ? effectivePrice(s, services) * 1.05 : 0)
   }, 0)
 
   async function submit() {
@@ -76,7 +77,7 @@ export function NewQuoteModal({ open, onClose }: { open: boolean; onClose: () =>
         <div>
           <Label hint={`${selected.length} selected`}>Services</Label>
           <div className="flex flex-col gap-2">
-            {services.map((s) => {
+            {flattenServices(services).map(({ service: s, depth }) => {
               const active = selected.includes(s.id)
               return (
                 <button
@@ -84,14 +85,18 @@ export function NewQuoteModal({ open, onClose }: { open: boolean; onClose: () =>
                   onClick={() => toggle(s.id)}
                   className={cn(
                     'flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors',
+                    depth > 0 && 'ml-5',
                     active ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20' : 'border-ink-200 hover:bg-ink-50 dark:border-ink-700 dark:hover:bg-ink-800',
                   )}
                 >
                   <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-md border', active ? 'border-accent-600 bg-accent-600 text-white' : 'border-ink-300 dark:border-ink-600')}>
                     {active && <Check className="h-3.5 w-3.5" />}
                   </span>
-                  <span className="flex-1 text-ink-700 dark:text-ink-200">{s.name}</span>
-                  <span className="text-ink-500 dark:text-ink-400">{formatAED(s.price)}</span>
+                  <span className="flex flex-1 items-center gap-2 text-ink-700 dark:text-ink-200">
+                    {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-ink-300 dark:text-ink-600" />}
+                    {s.name}
+                  </span>
+                  <span className="text-ink-500 dark:text-ink-400">{formatAED(effectivePrice(s, services))}</span>
                 </button>
               )
             })}

@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, CalendarCheck2, ChevronRight, Search, Sparkles, UserPlus, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarCheck2, Sparkles } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
-import { Input, Label, Select } from '../../components/ui/Field'
+import { ErrorText, Input, Label, Select, invalidFieldClass } from '../../components/ui/Field'
+import { PhoneInput } from '../../components/ui/PhoneInput'
+import { isUaeMobile, UAE_MOBILE_PLACEHOLDER } from '../../lib/phone'
 import { Stepper } from '../../components/ui/Stepper'
-import { Avatar } from '../../components/ui/Avatar'
-import { Badge } from '../../components/ui/Badge'
 import { ObligationPicker } from '../../components/onboarding/ObligationPicker'
 import { RegistrationFields, type ObligationDraft } from '../../components/onboarding/RegistrationFields'
+import { ReferralPicker } from '../../components/onboarding/ReferralPicker'
 import { SchedulePreview, type ScheduleGroup } from '../../components/onboarding/SchedulePreview'
 import { useData, PERIOD_HORIZON_YEARS, TODAY } from '../../data/store'
 import { cycleDescription, deriveFirstPeriod, generateFilingPeriods } from '../../data/filingPeriods'
@@ -30,6 +31,7 @@ interface DraftState {
   personType: 'legal' | 'natural'
   businessType: BusinessType | ''
   referrerId: string | null
+  subReferrerId: string | null
   taxYear: number
   /** Explicit "licence work only" path — skips steps 3 and 4. */
   noRegistrations: boolean
@@ -47,6 +49,7 @@ const emptyDraft: DraftState = {
   personType: 'legal',
   businessType: '',
   referrerId: null,
+  subReferrerId: null,
   taxYear: CURRENT_TAX_YEAR,
   noRegistrations: false,
   obligations: [],
@@ -66,8 +69,6 @@ export function ClientOnboarding() {
     }
   })
   const [resumed] = useState(() => !!localStorage.getItem(DRAFT_KEY))
-  const [referrerOpen, setReferrerOpen] = useState(false)
-  const [referrerQuery, setReferrerQuery] = useState('')
   const [done, setDone] = useState(false)
   const [newClientId, setNewClientId] = useState<string | null>(null)
   const [createdCount, setCreatedCount] = useState(0)
@@ -87,21 +88,8 @@ export function ClientOnboarding() {
   }
 
   const referrer = clients.find((c) => c.id === draft.referrerId) ?? null
-  const chain = useMemo(() => {
-    const result: string[] = []
-    let current = clients.find((c) => c.id === draft.referrerId)
-    while (current) {
-      result.unshift(current.name)
-      current = clients.find((c) => c.id === current?.referredById)
-    }
-    return result
-  }, [draft.referrerId, clients])
 
-  const referrerResults = (
-    referrerQuery
-      ? clients.filter((c) => (c.name + (c.businessName ?? '')).toLowerCase().includes(referrerQuery.toLowerCase()))
-      : clients
-  ).slice(0, 5)
+
 
   // --- obligations ---------------------------------------------------------
 
@@ -180,6 +168,7 @@ export function ClientOnboarding() {
       whatsapp: draft.phone || undefined,
       email: draft.email || `${draft.name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
       referredById: draft.referrerId ?? undefined,
+      subReferredById: draft.subReferrerId ?? undefined,
       status: 'active',
     })
 
@@ -232,9 +221,12 @@ export function ClientOnboarding() {
     setDone(false)
   }
 
+  // UAE mobile validation from origin/master — a malformed number breaks
+  // every WhatsApp/SMS reminder the system will later try to send.
+  const phoneValid = isUaeMobile(draft.phone)
   const skipRegistrations = draft.noRegistrations
   const canProceed = [
-    !!draft.name.trim() && !!draft.phone.trim(),
+    !!draft.name.trim() && phoneValid,
     draft.obligations.length > 0 || skipRegistrations,
     // Only the effective date is genuinely required — TRN and cycle both have
     // usable defaults or are legitimately unknown at onboarding time.
@@ -350,7 +342,12 @@ export function ClientOnboarding() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <Label>Phone / WhatsApp *</Label>
-                      <Input placeholder="+971 50 000 0000" value={draft.phone} onChange={(e) => update({ phone: e.target.value })} />
+                      <PhoneInput
+                        value={draft.phone}
+                        onChange={(phone) => update({ phone })}
+                        className={cn(draft.phone && !phoneValid && invalidFieldClass)}
+                      />
+                      {draft.phone && !phoneValid && <ErrorText>Use a UAE mobile number, e.g. {UAE_MOBILE_PLACEHOLDER}</ErrorText>}
                     </div>
                     <div>
                       <Label hint="optional">Email</Label>
@@ -391,77 +388,17 @@ export function ClientOnboarding() {
                     </div>
                   </div>
 
-                  {/* Referral — one field, not its own step. */}
+                  {/* Referrer (Level 1) + Sub-Referrer (Level 2). Markup and behaviour
+                      are Muhammad Hannan's from origin/master, extracted into
+                      ReferralPicker so it can sit inside step 1 instead of owning a
+                      whole wizard step. */}
                   <div className="border-t border-ink-100 pt-4 dark:border-ink-800">
-                    {referrer ? (
-                      <div className="flex items-center gap-3 rounded-xl border border-accent-200 bg-accent-50 p-3 dark:border-accent-800 dark:bg-accent-900/20">
-                        <Avatar name={referrer.name} color={referrer.avatarColor} size="sm" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{referrer.name}</p>
-                          <p className="text-xs text-ink-500 dark:text-ink-400">Referred this client</p>
-                        </div>
-                        <button
-                          onClick={() => update({ referrerId: null })}
-                          className="rounded-lg p-1.5 text-ink-400 hover:bg-white/60 dark:hover:bg-ink-800"
-                          aria-label="Remove referrer"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : referrerOpen ? (
-                      <div className="relative">
-                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-                        <Input
-                          placeholder="Search existing clients by name…"
-                          className="pl-9"
-                          value={referrerQuery}
-                          onChange={(e) => setReferrerQuery(e.target.value)}
-                          autoFocus
-                        />
-                        <div className="absolute z-10 mt-1.5 w-full overflow-hidden rounded-xl border border-ink-200/70 bg-white shadow-[var(--shadow-popover)] dark:border-ink-800 dark:bg-ink-900">
-                          {referrerResults.map((c) => (
-                            <button
-                              key={c.id}
-                              onClick={() => {
-                                update({ referrerId: c.id })
-                                setReferrerOpen(false)
-                                setReferrerQuery('')
-                              }}
-                              className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-sm hover:bg-ink-100 dark:hover:bg-ink-800"
-                            >
-                              <Avatar name={c.name} color={c.avatarColor} size="sm" />
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-ink-800 dark:text-ink-100">{c.name}</p>
-                                <p className="truncate text-xs text-ink-400">{c.businessName}</p>
-                              </div>
-                            </button>
-                          ))}
-                          {referrerResults.length === 0 && <p className="px-3.5 py-3 text-sm text-ink-400">No matches</p>}
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setReferrerOpen(true)}
-                        className="flex items-center gap-1.5 text-sm font-medium text-accent-600 hover:underline"
-                      >
-                        <UserPlus className="h-3.5 w-3.5" /> Referred by an existing client?
-                      </button>
-                    )}
-
-                    {referrer && chain.length > 0 && (
-                      <div className="mt-3 rounded-xl bg-ink-50 p-3.5 dark:bg-ink-800/60">
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">Where this client will sit</p>
-                        <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                          {chain.map((name, i) => (
-                            <span key={name} className="flex items-center gap-1.5">
-                              <Badge tone={i === chain.length - 1 ? 'accent' : 'neutral'}>{name}</Badge>
-                              <ChevronRight className="h-3.5 w-3.5 text-ink-300" />
-                            </span>
-                          ))}
-                          <Badge tone="success">{draft.name || 'New Client'}</Badge>
-                        </div>
-                      </div>
-                    )}
+                    <ReferralPicker
+                      clientName={draft.name}
+                      referrerId={draft.referrerId}
+                      subReferrerId={draft.subReferrerId}
+                      onChange={update}
+                    />
                   </div>
                 </div>
               )}

@@ -12,6 +12,7 @@ import {
   Briefcase,
   Receipt,
   Users2,
+  AlertTriangle,
 } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge, UrgencyBadge } from '../../components/ui/Badge'
@@ -23,13 +24,14 @@ import { EditClientModal } from '../../components/modals/EditClientModal'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
 import { WalletActionModal } from '../../components/modals/WalletActionModal'
 import { useData } from '../../data/store'
+import { serviceLabel } from '../../data/serviceTree'
 import { formatAED, formatDate, urgencyFromDate } from '../../lib/utils'
 
 export function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { clients, clientDocuments, obligationTypes, filingPeriods, documentTypes, matters, invoices, walletTransactions, services } = useData()
+  const { clients, clientDocuments, obligationTypes, filingPeriods, documentTypes, matters, invoices, walletTransactions, services, pendingChargesForClient } = useData()
   const client = clients.find((c) => c.id === id)
   const [tab, setTab] = useState(params.get('tab') ?? 'overview')
   const [editOpen, setEditOpen] = useState(false)
@@ -60,20 +62,31 @@ export function ClientProfile() {
     })
   const clientMatters = matters.filter((m) => m.clientId === id)
   const clientInvoices = invoices.filter((i) => i.clientId === id)
+  const clientPendingCharges = id ? pendingChargesForClient(id) : []
   const walletTx = walletTransactions.filter((w) => w.clientId === id)
   const walletBalance = walletTx.reduce((sum, t) => sum + (t.type === 'credit' ? t.amount : -t.amount), 0)
   const directReferrals = clients.filter((c) => c.referredById === id)
+  const subReferrals = clients.filter((c) => c.subReferredById === id || (c.referredById && directReferrals.some((d) => d.id === c.referredById && c.id !== id)))
   const referrer = clients.find((c) => c.id === client?.referredById)
+  const subReferrer = clients.find((c) => c.id === client?.subReferredById)
 
   const upline = useMemo(() => {
-    const chain: typeof clients = []
-    let cur = referrer
-    while (cur) {
-      chain.unshift(cur)
-      cur = clients.find((c) => c.id === cur?.referredById)
+    const chain: { client: typeof client; role: string }[] = []
+    if (referrer) {
+      let cur = clients.find((c) => c.id === referrer.referredById)
+      const uplines: typeof chain = []
+      while (cur) {
+        uplines.unshift({ client: cur, role: 'Upline' })
+        cur = clients.find((c) => c.id === cur?.referredById)
+      }
+      chain.push(...uplines)
+      chain.push({ client: referrer, role: 'Primary Referrer' })
+    }
+    if (subReferrer && subReferrer.id !== referrer?.id) {
+      chain.push({ client: subReferrer, role: 'Sub-Referrer' })
     }
     return chain
-  }, [referrer, clients])
+  }, [referrer, subReferrer, clients])
 
   if (!client) {
     return (
@@ -135,9 +148,11 @@ export function ClientProfile() {
           <div className="mt-5 flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-4 text-sm dark:border-ink-800">
             <span className="text-xs font-medium uppercase tracking-wide text-ink-400">Referral chain</span>
             {upline.map((u) => (
-              <span key={u.id} className="flex items-center gap-1.5">
-                <Link to={`/clients/${u.id}`}>
-                  <Badge tone="neutral">{u.name}</Badge>
+              <span key={u.client?.id} className="flex items-center gap-1.5">
+                <Link to={`/clients/${u.client?.id}`}>
+                  <Badge tone="neutral">
+                    {u.client?.name} <span className="text-[10px] text-ink-400 font-normal">({u.role})</span>
+                  </Badge>
                 </Link>
                 <ChevronRight className="h-3.5 w-3.5 text-ink-300" />
               </span>
@@ -155,7 +170,7 @@ export function ClientProfile() {
           { id: 'documents', label: 'Documents', count: docs.length + deadlines.length },
           { id: 'matters', label: 'Matters', count: clientMatters.length },
           { id: 'invoices', label: 'Invoices', count: clientInvoices.length },
-          { id: 'referrals', label: 'Referral Tree', count: directReferrals.length },
+          { id: 'referrals', label: 'Referral Tree', count: directReferrals.length + subReferrals.length },
           { id: 'wallet', label: 'Wallet' },
         ]}
       />
@@ -269,7 +284,7 @@ export function ClientProfile() {
                   <Briefcase className="h-4 w-4 shrink-0 text-ink-400" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{m.title}</p>
-                    <p className="text-xs text-ink-400">{service?.name} · Opened {formatDate(m.openedAt)}</p>
+                    <p className="text-xs text-ink-400">{serviceLabel(service, services)} · Opened {formatDate(m.openedAt)}</p>
                   </div>
                   <Badge tone="accent">{m.status.replace('-', ' ')}</Badge>
                 </Link>
@@ -280,6 +295,38 @@ export function ClientProfile() {
       )}
 
       {tab === 'invoices' && (
+        <div className="flex flex-col gap-6">
+        {clientPendingCharges.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Unbilled Charges</CardTitle>
+              <Badge tone="warning">{formatAED(clientPendingCharges.reduce((s, c) => s + c.amount, 0))}</Badge>
+            </CardHeader>
+            <CardBody className="flex flex-col gap-2 pt-2">
+              <p className="text-xs text-ink-400">Added automatically to the next invoice raised for this client.</p>
+              {clientPendingCharges.map((c) => (
+                <div key={c.id} className="flex items-center gap-3 rounded-lg border border-ink-200/70 px-3 py-2.5 dark:border-ink-800">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink-800 dark:text-ink-100">{c.description}</p>
+                    <p className="text-xs text-ink-400">
+                      Raised {formatDate(c.createdAt)}
+                      {c.matterId && (
+                        <>
+                          {' · '}
+                          <Link to={`/matters/${c.matterId}`} className="text-accent-600 hover:underline">
+                            View matter
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold text-ink-900 dark:text-ink-50">{formatAED(c.amount)}</span>
+                </div>
+              ))}
+            </CardBody>
+          </Card>
+        )}
         <Card>
           <CardBody className="flex flex-col gap-1 pt-5">
             {clientInvoices.length === 0 && <EmptyState icon={<Receipt className="h-5 w-5" />} title="No invoices yet" description="Sales invoices for this client will appear here." />}
@@ -297,32 +344,61 @@ export function ClientProfile() {
             ))}
           </CardBody>
         </Card>
+        </div>
       )}
 
       {tab === 'referrals' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Clients referred by {client.name}</CardTitle>
-          </CardHeader>
-          <CardBody className="flex flex-col gap-1 pt-2">
-            {directReferrals.length === 0 && (
-              <EmptyState icon={<Users2 className="h-5 w-5" />} title="No referrals yet" description="Clients this person refers will show up here, including their own sub-referrals." />
-            )}
-            {directReferrals.map((r) => {
-              const subCount = clients.filter((c) => c.referredById === r.id).length
-              return (
-                <Link key={r.id} to={`/clients/${r.id}`} className="flex items-center gap-3 rounded-lg px-2 py-3 hover:bg-ink-50 dark:hover:bg-ink-800">
-                  <Avatar name={r.name} color={r.avatarColor} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{r.name}</p>
-                    <p className="text-xs text-ink-400">{r.businessName}</p>
-                  </div>
-                  {subCount > 0 && <Badge tone="accent">{subCount} sub-referral{subCount > 1 ? 's' : ''}</Badge>}
-                </Link>
-              )
-            })}
-          </CardBody>
-        </Card>
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Direct Referrals — Level 1 ({directReferrals.length})</CardTitle>
+            </CardHeader>
+            <CardBody className="flex flex-col gap-1 pt-2">
+              {directReferrals.length === 0 && (
+                <EmptyState icon={<Users2 className="h-5 w-5" />} title="No direct referrals yet" description="Clients this person directly brings in will show up here." />
+              )}
+              {directReferrals.map((r) => {
+                const subCount = clients.filter((c) => c.referredById === r.id || c.subReferredById === r.id).length
+                return (
+                  <Link key={r.id} to={`/clients/${r.id}`} className="flex items-center gap-3 rounded-lg px-2 py-3 hover:bg-ink-50 dark:hover:bg-ink-800">
+                    <Avatar name={r.name} color={r.avatarColor} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{r.name}</p>
+                      <p className="text-xs text-ink-400">{r.businessName}</p>
+                    </div>
+                    {subCount > 0 && <Badge tone="accent">{subCount} sub-referral{subCount > 1 ? 's' : ''}</Badge>}
+                  </Link>
+                )
+              })}
+            </CardBody>
+          </Card>
+
+          {subReferrals.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Sub-Referrals — Level 2 ({subReferrals.length})</CardTitle>
+              </CardHeader>
+              <CardBody className="flex flex-col gap-1 pt-2">
+                {subReferrals.map((r) => {
+                  const directParent = clients.find((c) => c.id === r.referredById)
+                  return (
+                    <Link key={r.id} to={`/clients/${r.id}`} className="flex items-center gap-3 rounded-lg px-2 py-3 hover:bg-ink-50 dark:hover:bg-ink-800">
+                      <Avatar name={r.name} color={r.avatarColor} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{r.name}</p>
+                        <p className="text-xs text-ink-400">
+                          {r.businessName ? `${r.businessName} · ` : ''}
+                          {directParent ? `Brought in by ${directParent.name}` : 'Sub-referred'}
+                        </p>
+                      </div>
+                      <Badge tone="neutral">Level 2 Sub-Ref</Badge>
+                    </Link>
+                  )
+                })}
+              </CardBody>
+            </Card>
+          )}
+        </div>
       )}
 
       {tab === 'wallet' && (

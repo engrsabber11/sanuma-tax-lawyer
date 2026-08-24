@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { useData } from '../../data/store'
 import type { BusinessType } from '../../data/types'
 import { daysUntil, formatAED, urgencyFromDate } from '../../lib/utils'
+import { invoiceBalanceDue } from '../../lib/invoice'
 
 const businessTypeLabel: Record<BusinessType, string> = {
   grocery: 'Grocery / Retail',
@@ -34,15 +35,13 @@ export function ClientsList() {
         const docs = clientDocuments.filter((d) => d.clientId === c.id)
         const urgentCount = docs.filter((d) => urgencyFromDate(d.expiryDate) !== 'ok').length
         const clientInvoices = invoices.filter((i) => i.clientId === c.id)
-        const outstanding = clientInvoices.reduce(
-          (sum, i) => sum + (i.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 1.05 - i.paidAmount),
-          0,
-        )
+        const outstanding = clientInvoices.reduce((sum, i) => sum + invoiceBalanceDue(i), 0)
         const referrer = clients.find((r) => r.id === c.referredById)
+        const subReferrer = clients.find((r) => r.id === c.subReferredById)
         const nextUrgent = docs
           .map((d) => ({ ...d, days: daysUntil(d.expiryDate) }))
           .sort((a, b) => a.days - b.days)[0]
-        return { client: c, urgentCount, outstanding, referrer, nextUrgent }
+        return { client: c, urgentCount, outstanding, referrer, subReferrer, nextUrgent }
       })
   }, [query, typeFilter, statusFilter, clients, clientDocuments, invoices])
 
@@ -106,7 +105,7 @@ export function ClientsList() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ client, urgentCount, outstanding, referrer }) => (
+                {rows.map(({ client, urgentCount, outstanding, referrer, subReferrer }) => (
                   <tr key={client.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/70 dark:border-ink-800/60 dark:hover:bg-ink-800/40">
                     <td className="px-5 py-3.5">
                       <Link to={`/clients/${client.id}`} className="flex items-center gap-3">
@@ -119,9 +118,23 @@ export function ClientsList() {
                     </td>
                     <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">
                       {referrer ? (
-                        <Link to={`/clients/${referrer.id}`} className="hover:text-accent-600 hover:underline">
-                          {referrer.name}
-                        </Link>
+                        <div className="flex flex-col gap-0.5">
+                          <Link to={`/clients/${referrer.id}`} className="font-medium text-ink-800 dark:text-ink-200 hover:text-accent-600 hover:underline">
+                            {referrer.name}
+                          </Link>
+                          {subReferrer && (
+                            <span className="text-[11px] text-ink-400">
+                              Sub: <Link to={`/clients/${subReferrer.id}`} className="text-ink-600 dark:text-ink-300 hover:underline">{subReferrer.name}</Link>
+                            </span>
+                          )}
+                        </div>
+                      ) : subReferrer ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs text-ink-400">Direct</span>
+                          <span className="text-[11px] text-ink-400">
+                            Sub: <Link to={`/clients/${subReferrer.id}`} className="text-ink-600 dark:text-ink-300 hover:underline">{subReferrer.name}</Link>
+                          </span>
+                        </div>
                       ) : (
                         <span className="text-ink-300 dark:text-ink-600">— direct —</span>
                       )}
