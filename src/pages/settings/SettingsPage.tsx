@@ -20,7 +20,7 @@ import type { DueRule, ObligationType } from '../../data/types'
 
 const categoryLabel: Record<string, string> = { personal: 'Personal', business: 'Business', tax: 'Tax & Regulatory', financial: 'Financial' }
 
-/** Plain-language due rule, so the table is readable without decoding a union. */
+/****** Plain-language due rule, so the table is readable without decoding a union. */
 function dueRuleText(rule: DueRule): string {
   if (rule.kind === 'last-day-next-month') return 'Last day of the following month'
   if (rule.kind === 'day-of-next-month') return `${rule.day}th of the following month`
