@@ -1,6 +1,6 @@
 # Phase 8 — Dashboard, Vault, Settings, Cleanup
 
-**Status:** pending · **Depends on:** Phases 1–7 · **UI changes:** dashboard + vault + settings
+**Status:** done · **Depends on:** Phases 1–7 · **UI changes:** dashboard + vault + settings
 
 The finishing phase: make the app's entry points reflect the new spine, let
 the firm add its own obligations, and delete what the plan replaced.

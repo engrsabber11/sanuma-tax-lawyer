@@ -29,7 +29,7 @@ export const obligationTypes: ObligationType[] = [
     serviceId: 'svc-vat-return',
     certificateDocumentTypeId: 'dt-vat-cert',
     defaultReminderDays: FILING_REMINDER_DAYS,
-    defaultChannels: ['whatsapp', 'email'],
+    defaultChannels: ['whatsapp', 'email', 'sms'],
     builtIn: true,
   },
   {
@@ -45,7 +45,7 @@ export const obligationTypes: ObligationType[] = [
     serviceId: 'svc-vat-return',
     certificateDocumentTypeId: 'dt-vat-cert',
     defaultReminderDays: [30, 15, 7, 0],
-    defaultChannels: ['whatsapp', 'email'],
+    defaultChannels: ['whatsapp', 'email', 'sms'],
     builtIn: true,
   },
   {
@@ -58,7 +58,7 @@ export const obligationTypes: ObligationType[] = [
     serviceId: 'svc-corp-tax-filing',
     certificateDocumentTypeId: 'dt-corp-tax-cert',
     defaultReminderDays: FILING_REMINDER_DAYS,
-    defaultChannels: ['whatsapp', 'email'],
+    defaultChannels: ['whatsapp', 'email', 'sms'],
     builtIn: true,
   },
   {
@@ -67,9 +67,10 @@ export const obligationTypes: ObligationType[] = [
     shortName: 'Excise',
     periodicity: 'monthly',
     dueRule: { kind: 'day-of-next-month', day: 15 },
+    serviceId: 'svc-excise-return',
     certificateDocumentTypeId: 'dt-excise',
     defaultReminderDays: [30, 15, 7, 0],
-    defaultChannels: ['whatsapp', 'email'],
+    defaultChannels: ['whatsapp', 'email', 'sms'],
     builtIn: true,
   },
   {
@@ -81,7 +82,7 @@ export const obligationTypes: ObligationType[] = [
     fiscalYearEndMonth: 12,
     serviceId: 'svc-esr-report',
     defaultReminderDays: [60, 30, 7, 0],
-    defaultChannels: ['email'],
+    defaultChannels: ['whatsapp', 'email', 'sms'],
     builtIn: true,
   },
   {
@@ -93,7 +94,7 @@ export const obligationTypes: ObligationType[] = [
     fiscalYearEndMonth: 12,
     serviceId: 'svc-esr-report',
     defaultReminderDays: [60, 30, 7, 0],
-    defaultChannels: ['email'],
+    defaultChannels: ['whatsapp', 'email', 'sms'],
     builtIn: true,
   },
 ]

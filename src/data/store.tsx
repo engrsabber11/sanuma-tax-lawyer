@@ -27,13 +27,16 @@ import type {
   ReminderLogEntry,
   ReminderRule,
   Service,
+  StaffUser,
   WalletTransaction,
 } from './types'
-import { addDays, genId, todayIso, urgencyFromDate } from '../lib/utils'
+import { addDays, formatAED, genId, isOverdue, todayIso, urgencyFromDate } from '../lib/utils'
 import { invoiceTotal } from '../lib/invoice'
 import { defaultChecklistForService } from './matterChecklists'
 import { obligationTypes as seedObligationTypes } from './obligationTypes'
-import { deriveFirstPeriod, generateFilingPeriods } from './filingPeriods'
+import { roleCan, type Permission } from './permissions'
+import { demoPasswordMatches } from './demoCredentials'
+import { deriveFirstPeriod, generateFilingPeriods, matterDefaultsForFiling } from './filingPeriods'
 
 /**
  * How far ahead filing periods are generated: the current tax year + this many.
@@ -42,6 +45,17 @@ import { deriveFirstPeriod, generateFilingPeriods } from './filingPeriods'
  */
 export const PERIOD_HORIZON_YEARS = 1
 
+/**
+ * The seed's authoring date, re-exported for screens that anchor demo data to it
+ * (default tax-year pickers, form date defaults).
+ *
+ * It is NOT "now". Every record this store writes about something that just
+ * happened — a filed date, an audit entry, an invoice issue date, a ledger line —
+ * is stamped with `todayIso()`. Phase 6 established that rule after the reminder
+ * log recorded a chase sent in August as sent in July; Phase 7 finished applying
+ * it here after the filing → matter → invoice chain filed a return on the real
+ * date and invoiced it five weeks earlier.
+ */
 export const TODAY = seed.TODAY
 
 interface FirmProfile {
@@ -81,6 +95,25 @@ interface DataContextValue {
   penaltyFeeRule: PenaltyFeeRule
   pendingCharges: PendingCharge[]
   firmProfile: FirmProfile
+  activeStaff: StaffUser
+  setActiveStaff: (staff: StaffUser) => void
+  /** False until someone picks a user on the login screen. */
+  signedIn: boolean
+  signIn: (staffId: string) => void
+  /**
+   * Email + password sign-in. Returns a reason on failure rather than a bare
+   * false, so the form can say which half was wrong.
+   */
+  signInWithCredentials: (email: string, password: string) => { ok: boolean; reason?: string }
+  signOut: () => void
+  staffMembers: StaffUser[]
+  /**
+   * Whether the signed-in staff member may do something. One matrix in
+   * permissions.ts answers it — never a role comparison inside a component.
+   */
+  can: (permission: Permission) => boolean
+  /** `actor` defaults to the signed-in staff member; pass it only to attribute the act to someone else. */
+  addAuditEntry: (input: Omit<AuditEntry, 'id' | 'at' | 'actor'> & { actor?: string }) => void
 
   addClient: (input: Omit<Client, 'id' | 'createdAt' | 'avatarColor'> & { avatarColor?: string }) => Client
   updateClient: (id: string, patch: Partial<Client>) => void
@@ -89,6 +122,11 @@ interface DataContextValue {
   addDocumentType: (input: Omit<DocumentTypeDef, 'id'>) => void
   linkDocumentToMatter: (documentId: string, matterId: string) => void
   unlinkDocumentFromMatter: (documentId: string) => void
+
+  addObligationType: (input: Omit<ObligationType, 'id' | 'builtIn'>) => ObligationType
+  updateObligationType: (id: string, patch: Partial<Omit<ObligationType, 'id' | 'builtIn'>>) => void
+  deleteObligationType: (id: string) => { ok: boolean; reason?: string }
+  registrationsUsingObligation: (obligationTypeId: string) => Registration[]
 
   addRegistration: (input: {
     clientId: string
@@ -104,7 +142,19 @@ interface DataContextValue {
   updateRegistration: (id: string, patch: Partial<Registration>) => void
   deregisterRegistration: (id: string, deregisteredAt: string) => void
   regeneratePeriodsFor: (registrationId: string) => void
-  markFilingFiled: (filingPeriodId: string, filedAt?: string) => void
+  markFilingFiled: (
+    filingPeriodId: string,
+    details?:
+      | {
+          filedAt?: string
+          ftaReferenceNo?: string
+          taxPayableOrRefund?: number
+          submissionReceiptName?: string
+          submittedBy?: string
+          note?: string
+        }
+      | string,
+  ) => void
   markFilingNotRequired: (filingPeriodId: string) => void
   openClientYear: (clientId: string, taxYear: number) => void
   closeClientYear: (clientId: string, taxYear: number) => void
@@ -114,6 +164,15 @@ interface DataContextValue {
   revertFilingToPending: (filingPeriodId: string) => void
 
   addMatter: (input: { clientId: string; title: string; serviceId: string; dueDate?: string; clientInitiated?: boolean }) => Matter
+  /**
+   * Opens the matter that files a period, auto-titled from the obligation and
+   * back-linked both ways. Returns the existing matter when there already is
+   * one — two matters for one return means two invoices for one return.
+   */
+  openMatterForFiling: (
+    filingPeriodId: string,
+    overrides?: { title?: string; serviceId?: string; dueDate?: string; clientInitiated?: boolean },
+  ) => Matter | undefined
   updateMatter: (id: string, patch: Partial<Matter>) => void
   toggleMatterChecklistItem: (matterId: string, itemId: string) => void
   addMatterChecklistItem: (matterId: string, label: string) => void
@@ -136,6 +195,8 @@ interface DataContextValue {
   addCreditNote: (input: { kind: 'firm-issued' | 'client-advisory'; clientId: string; invoiceId?: string; reason: string; amount: number; vatAmount: number }) => void
 
   addExpense: (input: Omit<Expense, 'id'>) => void
+  updateExpense: (id: string, patch: Partial<Omit<Expense, 'id'>>) => void
+  deleteExpense: (id: string) => void
 
   addWalletTransaction: (input: { clientId: string; type: 'credit' | 'debit'; reason: string; amount: number }) => void
   applyWalletToInvoice: (clientId: string, invoiceId: string, amount: number) => void
@@ -180,6 +241,23 @@ const DEFAULT_FIRM_PROFILE: FirmProfile = {
 
 const STORAGE_KEY = 'sanuma-app-state-v2'
 const ONBOARDING_DRAFT_KEY = 'sanuma-onboarding-draft'
+
+/**
+ * Who is signed in, kept apart from the app state.
+ *
+ * Separate key on purpose: a session is not data. Clearing the demo data should
+ * not sign you out, and signing out should not wipe a client's records. It also
+ * survives the STORAGE_KEY bumps this project keeps needing.
+ */
+const SESSION_KEY = 'sanuma-session-staff-id'
+
+function loadSessionStaffId(): string | null {
+  try {
+    return localStorage.getItem(SESSION_KEY)
+  } catch {
+    return null
+  }
+}
 
 interface PersistedState {
   clients?: Client[]
@@ -240,6 +318,12 @@ function migrateReminderRules(rules: ReminderRule[]): ReminderRule[] {
   })
 }
 
+/**
+ * Deliberately on `TODAY`, not the real clock: this sets how far the generator
+ * runs, and the seeded filing history is written against the seed's year. Reading
+ * the real clock here would silently regenerate a different number of periods
+ * than the seed marked filed.
+ */
 function currentTaxYear(): number {
   return Number(TODAY.slice(0, 4))
 }
@@ -263,6 +347,64 @@ function hydrateSeedRegistrations(): Registration[] {
   }))
 }
 
+/**
+ * Reconciles the persisted catalog with the built-ins defined in code.
+ *
+ * Field-level merge, seed first: a key the firm has edited wins, and a key the
+ * code has since ADDED still arrives (Phase 7 gave the Excise obligation a
+ * `serviceId`; without this a tester with saved state would open a matter
+ * against an excise return with nothing to bill).
+ *
+ * Phase 8 made built-ins editable, which is why the precedence is this way round
+ * and not the reverse — a firm that legitimately changed the VAT due rule must
+ * not have it silently reset on every reload. Custom types pass through
+ * untouched.
+ */
+function hydrateObligationTypes(stored: ObligationType[] | undefined): ObligationType[] {
+  if (!stored) return seedObligationTypes
+  const storedById = new Map(stored.map((t) => [t.id, t]))
+  const builtIn = seedObligationTypes.map((t) => ({ ...t, ...storedById.get(t.id), builtIn: true }))
+  const custom = stored.filter((t) => !seedObligationTypes.some((s) => s.id === t.id))
+  return [...builtIn, ...custom]
+}
+
+/**
+ * Rebuilds one registration's schedule inside `all`, WITHOUT touching history.
+ *
+ * A period is "locked" once it has been filed, or has a matter or invoice
+ * against it. Locked periods are preserved including their original dates: if a
+ * filed period's dates were recomputed, the invoice already issued against it
+ * would start describing a period that no longer matches what was filed with the
+ * FTA. Keying on `periodStart` also keeps matterId / invoiceId back-links intact
+ * across a regeneration.
+ *
+ * Where a locked period contradicts the fresh schedule (someone corrected an
+ * effective date after filing), the locked one wins and the mismatch stays
+ * visible rather than being resolved silently.
+ *
+ * Pure and reducible, so the catalog editor can reschedule many registrations in
+ * a single state update without the locking rule being written twice.
+ */
+function mergeRegenerated(
+  all: FilingPeriod[],
+  reg: Registration,
+  type: ObligationType,
+  throughTaxYear: number,
+): FilingPeriod[] {
+  const others = all.filter((p) => p.registrationId !== reg.id)
+  const mine = all.filter((p) => p.registrationId === reg.id)
+  const locked = mine.filter((p) => p.state === 'filed' || p.matterId || p.invoiceId)
+  const lockedByStart = new Map(locked.map((p) => [p.periodStart, p]))
+
+  const fresh = generateFilingPeriods(reg, type, throughTaxYear)
+  const merged = fresh.map((p) => lockedByStart.get(p.periodStart) ?? p)
+
+  // Locked periods the fresh schedule no longer produces are kept, never dropped.
+  const orphanedLocked = locked.filter((p) => !fresh.some((f) => f.periodStart === p.periodStart))
+
+  return [...others, ...orphanedLocked, ...merged]
+}
+
 function buildSeedFilingPeriods(regs: Registration[], types: ObligationType[]): FilingPeriod[] {
   const generated = regs.flatMap((r) => {
     const type = types.find((t) => t.id === r.obligationTypeId)
@@ -274,21 +416,59 @@ function buildSeedFilingPeriods(regs: Registration[], types: ObligationType[]): 
 
 function docStatusFromExpiry(expiryDate: string): ClientDocument['status'] {
   const urgency = urgencyFromDate(expiryDate)
-  if (urgency === 'danger') return 'expired'
+  // `critical` folds in here rather than growing the stored enum: this field is a
+  // cache of a derived value, and every reader already treats 'expired' as terminal.
+  if (isOverdue(urgency)) return 'expired'
   if (urgency === 'warning') return 'expiring'
   return 'valid'
 }
 
+export const DEFAULT_STAFF_MEMBERS: StaffUser[] = [
+  {
+    id: 'staff-1',
+    name: 'Adv. Muhammad Hannan',
+    title: 'Managing Partner & Registered Tax Agent',
+    email: 'hannan@sanuma-tax.ae',
+    role: 'partner',
+    avatarColor: 'bg-emerald-600',
+  },
+  {
+    id: 'staff-2',
+    name: 'Sarah Al Zaabi',
+    title: 'Senior Corporate Tax Consultant',
+    email: 'sarah@sanuma-tax.ae',
+    role: 'consultant',
+    avatarColor: 'bg-teal-600',
+  },
+  {
+    id: 'staff-3',
+    name: 'Rashid Al Nuaimi',
+    title: 'Associate Tax Advisor',
+    email: 'rashid@sanuma-tax.ae',
+    role: 'assistant',
+    avatarColor: 'bg-sky-600',
+  },
+]
+
 export function DataProvider({ children }: { children: ReactNode }) {
+  // Restored from the session, NOT defaulted to the first staff member: landing
+  // as the Partner every reload made the other two roles impossible to test, and
+  // silently handed full permissions to whoever opened the tab.
+  const [sessionStaffId, setSessionStaffId] = useState<string | null>(loadSessionStaffId)
+  const activeStaff =
+    DEFAULT_STAFF_MEMBERS.find((m) => m.id === sessionStaffId) ?? DEFAULT_STAFF_MEMBERS[0]
+  const signedIn = !!sessionStaffId && DEFAULT_STAFF_MEMBERS.some((m) => m.id === sessionStaffId)
   const [persisted] = useState(loadPersisted)
   const [clients, setClients] = useState<Client[]>(persisted.clients ?? seed.clients)
   const [clientDocuments, setClientDocuments] = useState<ClientDocument[]>(persisted.clientDocuments ?? seed.clientDocuments)
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeDef[]>(persisted.documentTypes ?? seed.documentTypes)
   // Setter intentionally omitted until Phase 8 adds the catalog editor.
-  const [obligationTypes] = useState<ObligationType[]>(persisted.obligationTypes ?? seedObligationTypes)
+  const [obligationTypes, setObligationTypes] = useState<ObligationType[]>(() =>
+    hydrateObligationTypes(persisted.obligationTypes),
+  )
   const [registrations, setRegistrations] = useState<Registration[]>(persisted.registrations ?? hydrateSeedRegistrations)
   const [filingPeriods, setFilingPeriods] = useState<FilingPeriod[]>(
-    () => persisted.filingPeriods ?? buildSeedFilingPeriods(hydrateSeedRegistrations(), persisted.obligationTypes ?? seedObligationTypes),
+    () => persisted.filingPeriods ?? buildSeedFilingPeriods(hydrateSeedRegistrations(), hydrateObligationTypes(persisted.obligationTypes)),
   )
   const [clientYears, setClientYears] = useState<ClientYear[]>(persisted.clientYears ?? [])
   const [auditLog, setAuditLog] = useState<AuditEntry[]>(persisted.auditLog ?? [])
@@ -377,10 +557,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLedgerEntries((prev) => [...prev, { id: genId('l'), ...input }])
   }
 
+  function signIn(staffId: string) {
+    if (!DEFAULT_STAFF_MEMBERS.some((m) => m.id === staffId)) return
+    try {
+      localStorage.setItem(SESSION_KEY, staffId)
+    } catch {
+      // A blocked storage write must not stop the sign-in; the session just
+      // lasts until the tab closes.
+    }
+    setSessionStaffId(staffId)
+  }
+
+  function signInWithCredentials(email: string, password: string) {
+    const trimmed = email.trim().toLowerCase()
+    const staff = DEFAULT_STAFF_MEMBERS.find((m) => m.email.toLowerCase() === trimmed)
+    // Deliberately two different messages: this is a demo login whose job is to
+    // be learnable, not to resist enumeration. Real auth should collapse both
+    // into one generic failure.
+    if (!staff) return { ok: false, reason: 'No user with that email address.' }
+    if (!demoPasswordMatches(staff.id, password)) return { ok: false, reason: 'That password is not correct.' }
+    signIn(staff.id)
+    return { ok: true }
+  }
+
+  function signOut() {
+    try {
+      localStorage.removeItem(SESSION_KEY)
+    } catch {
+      /* nothing to clean up */
+    }
+    setSessionStaffId(null)
+  }
+
+  /** Kept for the Topbar's switcher, which is a shortcut for signing in as someone else. */
+  function setActiveStaff(staff: StaffUser) {
+    signIn(staff.id)
+  }
+
+  function can(permission: Permission) {
+    return roleCan(activeStaff.role, permission)
+  }
+
   function addClient(input: Omit<Client, 'id' | 'createdAt' | 'avatarColor'> & { avatarColor?: string }) {
     const created: Client = {
       id: genId('c'),
-      createdAt: TODAY,
+      createdAt: todayIso(),
       avatarColor: input.avatarColor ?? AVATAR_COLORS[clients.length % AVATAR_COLORS.length],
       ...input,
     }
@@ -426,6 +647,116 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // --- obligation catalog --------------------------------------------------
+
+  function registrationsUsingObligation(obligationTypeId: string) {
+    return registrations.filter((r) => r.obligationTypeId === obligationTypeId)
+  }
+
+  /**
+   * A new obligation gets a reminder rule immediately, the same way
+   * `addDocumentType` does. A firm that adds "Municipality Return" and hears
+   * nothing about it until they notice the silence has been given a deadline the
+   * system will not chase.
+   */
+  function addObligationType(input: Omit<ObligationType, 'id' | 'builtIn'>) {
+    const created: ObligationType = { id: genId('ob'), builtIn: false, ...input }
+    setObligationTypes((prev) => [...prev, created])
+    setReminderRules((prev) => [
+      ...prev,
+      {
+        id: genId('rr'),
+        subjectKind: 'obligation',
+        subjectTypeId: created.id,
+        subjectName: created.name,
+        daysBefore: created.defaultReminderDays,
+        channels: created.defaultChannels,
+        // Filing deadlines need chasing on both sides — matches the seed.
+        audience: 'both',
+        enabled: true,
+      },
+    ])
+    return created
+  }
+
+  function updateObligationType(id: string, patch: Partial<Omit<ObligationType, 'id' | 'builtIn'>>) {
+    const before = obligationTypes.find((t) => t.id === id)
+    setObligationTypes((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+    // Keep the rule's display name in step; the rule is keyed on id, not name.
+    if (patch.name) {
+      setReminderRules((prev) =>
+        prev.map((r) =>
+          r.subjectKind === 'obligation' && r.subjectTypeId === id ? { ...r, subjectName: patch.name! } : r,
+        ),
+      )
+    }
+    // The cycle moved, so every schedule built from it is now wrong.
+    if (!before || (patch.periodicity === undefined && patch.dueRule === undefined)) return
+    const affected = registrationsUsingObligation(id)
+    if (affected.length === 0) return
+
+    // The merged type is used explicitly: `obligationTypes` still holds the
+    // pre-edit value during this render, so regenerating off state would rebuild
+    // the schedule from the rule the firm just changed away from.
+    const next: ObligationType = { ...before, ...patch }
+
+    // A registration stores its OWN periodicity, copied when it was created, and
+    // `generateFilingPeriods` reads it from there. So changing the catalog's cycle
+    // has to move each registration too — otherwise the catalog would say monthly
+    // while every schedule quietly stayed quarterly.
+    const moved =
+      patch.periodicity !== undefined
+        ? affected
+            .filter((r) => r.periodicity !== patch.periodicity)
+            .map((r) => {
+              const periodicity = patch.periodicity!
+              const staggerGroup = periodicity === 'quarterly' ? (r.staggerGroup ?? next.staggerOptions?.[0]) : undefined
+              const fiscalYearEndMonth =
+                periodicity === 'annual' ? (r.fiscalYearEndMonth ?? next.fiscalYearEndMonth ?? 12) : undefined
+              return {
+                ...r,
+                periodicity,
+                staggerGroup,
+                fiscalYearEndMonth,
+                ...deriveFirstPeriod(r.effectiveDate, periodicity, { staggerGroup, fiscalYearEndMonth }),
+              }
+            })
+        : []
+
+    if (moved.length > 0) {
+      const movedById = new Map(moved.map((r) => [r.id, r]))
+      setRegistrations((prev) => prev.map((r) => movedById.get(r.id) ?? r))
+    }
+
+    // One state update for all of them: regenerating in a loop of setState calls
+    // would each read the same stale `prev` and only the last would survive.
+    const movedById = new Map(moved.map((r) => [r.id, r]))
+    setFilingPeriods((prev) =>
+      affected.reduce((acc, r) => mergeRegenerated(acc, movedById.get(r.id) ?? r, next, horizonYear()), prev),
+    )
+  }
+
+  function deleteObligationType(id: string) {
+    const type = obligationTypes.find((t) => t.id === id)
+    if (!type) return { ok: false, reason: 'That obligation no longer exists.' }
+    if (type.builtIn) {
+      return {
+        ok: false,
+        reason: `${type.name} is built in. It can be edited, but deleting it would orphan every registration pointing at it.`,
+      }
+    }
+    const inUse = registrationsUsingObligation(id)
+    if (inUse.length > 0) {
+      return {
+        ok: false,
+        reason: `${inUse.length} registration${inUse.length === 1 ? '' : 's'} still use${inUse.length === 1 ? 's' : ''} ${type.name}. Remove or repoint ${inUse.length === 1 ? 'it' : 'them'} first — deleting now would take filed periods and their invoices with it.`,
+      }
+    }
+    setObligationTypes((prev) => prev.filter((t) => t.id !== id))
+    setReminderRules((prev) => prev.filter((r) => !(r.subjectKind === 'obligation' && r.subjectTypeId === id)))
+    return { ok: true }
+  }
+
   // --- registrations & filing periods -------------------------------------
 
   /**
@@ -442,24 +773,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * effective date after filing), the locked one wins and the mismatch stays
    * visible rather than being resolved silently.
    */
-  function regeneratePeriodsFor(registrationId: string) {
+  function regeneratePeriodsFor(registrationId: string, typeOverride?: ObligationType) {
     setFilingPeriods((prev) => {
       const reg = registrations.find((r) => r.id === registrationId)
-      const type = reg && obligationTypes.find((t) => t.id === reg.obligationTypeId)
+      const type = typeOverride ?? (reg && obligationTypes.find((t) => t.id === reg.obligationTypeId))
       if (!reg || !type) return prev
-
-      const others = prev.filter((p) => p.registrationId !== registrationId)
-      const mine = prev.filter((p) => p.registrationId === registrationId)
-      const locked = mine.filter((p) => p.state === 'filed' || p.matterId || p.invoiceId)
-      const lockedByStart = new Map(locked.map((p) => [p.periodStart, p]))
-
-      const fresh = generateFilingPeriods(reg, type, horizonYear())
-      const merged = fresh.map((p) => lockedByStart.get(p.periodStart) ?? p)
-
-      // Locked periods the fresh schedule no longer produces are kept, never dropped.
-      const orphanedLocked = locked.filter((p) => !fresh.some((f) => f.periodStart === p.periodStart))
-
-      return [...others, ...orphanedLocked, ...merged]
+      return mergeRegenerated(prev, reg, type, horizonYear())
     })
   }
 
@@ -495,7 +814,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       dueRule: input.dueRule,
       certificateDocumentId: input.certificateDocumentId,
       status: 'active',
-      createdAt: TODAY,
+      createdAt: todayIso(),
     }
 
     setRegistrations((prev) => [...prev, created])
@@ -543,10 +862,62 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setRegistrations((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'deregistered', deregisteredAt } : r)))
   }
 
-  function markFilingFiled(filingPeriodId: string, filedAt?: string) {
+  /**
+   * `filedAt` defaults to the real clock, not the seed's `TODAY`. Phase 6 fixed
+   * this for the reminder log; the same defect here is worse — "when did we file
+   * it" is the answer to an FTA late-filing penalty, and a return filed today
+   * must not be recorded as filed on the seed's authoring date.
+   */
+  /**
+   * Marks a period filed, capturing FTA reference number and net tax payable if supplied,
+   * and automatically logging an audit entry.
+   */
+  function markFilingFiled(
+    filingPeriodId: string,
+    details?:
+      | {
+          filedAt?: string
+          ftaReferenceNo?: string
+          taxPayableOrRefund?: number
+          submissionReceiptName?: string
+          submittedBy?: string
+          note?: string
+        }
+      | string,
+  ) {
+    const filedAt = typeof details === 'string' ? details : details?.filedAt ?? todayIso()
+    const ftaReferenceNo = typeof details === 'object' ? details.ftaReferenceNo : undefined
+    const taxPayableOrRefund = typeof details === 'object' ? details.taxPayableOrRefund : undefined
+    const submissionReceiptName = typeof details === 'object' ? details.submissionReceiptName : undefined
+    const submittedBy = typeof details === 'object' ? details.submittedBy ?? activeStaff.name : activeStaff.name
+
     setFilingPeriods((prev) =>
-      prev.map((p) => (p.id === filingPeriodId ? { ...p, state: 'filed', filedAt: filedAt ?? TODAY } : p)),
+      prev.map((p) =>
+        p.id === filingPeriodId
+          ? {
+              ...p,
+              state: 'filed',
+              filedAt,
+              ftaReferenceNo: ftaReferenceNo || p.ftaReferenceNo,
+              taxPayableOrRefund: taxPayableOrRefund !== undefined ? taxPayableOrRefund : p.taxPayableOrRefund,
+              submissionReceiptName: submissionReceiptName || p.submissionReceiptName,
+              submittedBy,
+            }
+          : p,
+      ),
     )
+
+    const period = filingPeriods.find((p) => p.id === filingPeriodId)
+    if (period) {
+      const type = obligationTypes.find((t) => t.id === period.obligationTypeId)
+      addAuditEntry({
+        action: 'filing-submitted',
+        clientId: period.clientId,
+        subject: `${type?.name ?? 'Filing'} — ${period.label}`,
+        note: ftaReferenceNo ? `FTA Ref: ${ftaReferenceNo}${taxPayableOrRefund !== undefined ? ` · Net Tax: ${formatAED(taxPayableOrRefund)}` : ''}` : undefined,
+        actor: submittedBy,
+      })
+    }
   }
 
   function markFilingNotRequired(filingPeriodId: string) {
@@ -555,10 +926,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  function addAuditEntry(input: Omit<AuditEntry, 'id' | 'at' | 'actor'>) {
+  /** Stamped from the real clock for the same reason as `filedAt` — an audit
+   * trail that reports the wrong date is worse than none. */
+  function addAuditEntry(input: Omit<AuditEntry, 'id' | 'at' | 'actor'> & { actor?: string }) {
     setAuditLog((prev) => [
       ...prev,
-      { id: genId('au'), at: `${TODAY}T00:00:00`, actor: firmProfile.name, ...input },
+      {
+        // Spread first: the computed fields below must win. With `...input` last,
+        // an omitted `actor` overwrote the resolved one with undefined.
+        ...input,
+        id: genId('au'),
+        at: `${todayIso()}T${new Date().toTimeString().slice(0, 8)}`,
+        // Most actions are attributed to whoever is signed in; a caller passes
+        // `actor` only when recording someone else's act (an FTA submission
+        // filed by a named staff member).
+        actor: input.actor || activeStaff.name,
+      },
     ])
   }
 
@@ -579,7 +962,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!canCloseClientYear(clientId, taxYear).ok) return
     setClientYears((prev) => {
       const exists = prev.some((y) => y.clientId === clientId && y.taxYear === taxYear)
-      const closed: ClientYear = { clientId, taxYear, status: 'closed', closedAt: TODAY }
+      const closed: ClientYear = { clientId, taxYear, status: 'closed', closedAt: todayIso() }
       return exists
         ? prev.map((y) => (y.clientId === clientId && y.taxYear === taxYear ? { ...y, ...closed } : y))
         : [...prev, closed]
@@ -591,7 +974,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setClientYears((prev) =>
       prev.map((y) =>
         y.clientId === clientId && y.taxYear === taxYear
-          ? { ...y, status: 'open', reopenedAt: TODAY, reopenReason: reason || undefined, closedAt: undefined }
+          ? { ...y, status: 'open', reopenedAt: todayIso(), reopenReason: reason || undefined, closedAt: undefined }
           : y,
       ),
     )
@@ -631,7 +1014,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const created: Matter = {
       id: genId('m'),
       status: 'intake',
-      openedAt: TODAY,
+      openedAt: todayIso(),
       checklist: defaultChecklistForService(input.serviceId),
       ...input,
       clientInitiated,
@@ -648,7 +1031,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         description: penaltyFeeRule.label,
         amount: penaltyFeeRule.amount,
         vatApplicable: penaltyFeeRule.vatApplicable,
-        createdAt: TODAY,
+        createdAt: todayIso(),
         status: 'pending',
       }
       setPendingCharges((prev) => [...prev, charge])
@@ -656,6 +1039,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     setMattersState((prev) => [...prev, created])
+    return created
+  }
+
+  /**
+   * The filing → matter half of the chain.
+   *
+   * Guards against duplicates by returning the existing matter rather than
+   * creating a second one: two matters for one return end up as two invoices for
+   * one return, and the FTA record has no way to say which was real.
+   *
+   * Returns undefined only when nothing can be resolved to bill against — an
+   * obligation with no service, or a service deleted from the catalog. The
+   * caller then has to ask for one instead of guessing.
+   */
+  function openMatterForFiling(
+    filingPeriodId: string,
+    overrides?: { title?: string; serviceId?: string; dueDate?: string; clientInitiated?: boolean },
+  ) {
+    const period = filingPeriods.find((p) => p.id === filingPeriodId)
+    if (!period) return undefined
+
+    const existing = period.matterId ? matters.find((m) => m.id === period.matterId) : undefined
+    if (existing) return existing
+
+    const type = obligationTypes.find((t) => t.id === period.obligationTypeId)
+    const defaults = matterDefaultsForFiling(period, type)
+    const serviceId = overrides?.serviceId ?? defaults.serviceId
+    if (!serviceId || !services.some((s) => s.id === serviceId)) return undefined
+
+    const created = addMatter({
+      clientId: period.clientId,
+      title: overrides?.title?.trim() || defaults.title,
+      serviceId,
+      dueDate: overrides?.dueDate ?? defaults.dueDate,
+      // No penalty fee by default. SanumaBusinessFundamentalBn.md §5 charges the
+      // minimum fee when the CLIENT's delay forces the firm to act — a return
+      // filed on its own schedule is the engagement being performed, not that.
+      // The lawyer can still flip it when a client did stonewall.
+      clientInitiated: overrides?.clientInitiated ?? true,
+    })
+
+    setFilingPeriods((prev) => prev.map((p) => (p.id === filingPeriodId ? { ...p, matterId: created.id } : p)))
     return created
   }
 
@@ -669,7 +1094,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   function waivePendingCharge(id: string, reason: string) {
     setPendingCharges((prev) =>
-      prev.map((c) => (c.id === id && c.status === 'pending' ? { ...c, status: 'waived', waivedReason: reason, waivedAt: TODAY } : c)),
+      prev.map((c) => (c.id === id && c.status === 'pending' ? { ...c, status: 'waived', waivedReason: reason, waivedAt: todayIso() } : c)),
     )
   }
 
@@ -679,7 +1104,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (m.id !== id) return m
         const next = { ...m, ...patch }
         if (patch.status !== undefined) {
-          next.completedAt = patch.status === 'completed' ? (patch.completedAt ?? TODAY) : undefined
+          next.completedAt = patch.status === 'completed' ? (patch.completedAt ?? todayIso()) : undefined
         }
         return next
       }),
@@ -720,7 +1145,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
 
   function addQuote(input: { clientId: string; serviceIds: string[]; amount: number }) {
-    setQuotes((prev) => [...prev, { id: genId('q'), status: 'draft', createdAt: TODAY, ...input }])
+    setQuotes((prev) => [...prev, { id: genId('q'), status: 'draft', createdAt: todayIso(), ...input }])
   }
 
   function addInvoice(input: { clientId: string; matterId?: string; lines: InvoiceLine[]; dueDate: string; pendingChargeIds?: string[] }) {
@@ -730,12 +1155,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const created: Invoice = {
       id: genId('inv'),
       number: `INV-2026-${1001 + invoices.length}`,
-      issueDate: TODAY,
+      issueDate: todayIso(),
       status: 'unpaid',
       paidAmount: 0,
       ...invoiceInput,
     }
     setInvoices((prev) => [...prev, created])
+
+    // Closes the filing → matter → invoice chain. Done here rather than at the
+    // call site so an invoice raised against a filing matter is back-linked
+    // whichever screen raised it.
+    if (created.matterId) {
+      setFilingPeriods((prev) =>
+        prev.map((p) => (p.matterId === created.matterId && !p.invoiceId ? { ...p, invoiceId: created.id } : p)),
+      )
+    }
 
     // Charges picked up by this invoice stop being pending; ones left out stay in the
     // queue and resurface on the next invoice for that client.
@@ -747,7 +1181,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         .filter((c) => pendingChargeIds.includes(c.id) && c.status === 'pending')
         .reduce((sum, c) => sum + c.amount, 0)
       if (billedTotal > 0) {
-        addLedgerEntry({ date: TODAY, account: 'Penalty Income', description: `${created.number} — firm-initiated matter fees`, debit: 0, credit: billedTotal })
+        addLedgerEntry({ date: todayIso(), account: 'Penalty Income', description: `${created.number} — firm-initiated matter fees`, debit: 0, credit: billedTotal })
       }
     }
 
@@ -761,7 +1195,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const svc = services.find((s) => s.id === sid)
       return { serviceId: sid, description: svc?.name ?? 'Service', qty: 1, unitPrice: svc?.price ?? 0 }
     })
-    return addInvoice({ clientId: quote.clientId, lines, dueDate: addDays(TODAY, 14) })
+    return addInvoice({ clientId: quote.clientId, lines, dueDate: addDays(todayIso(), 14) })
   }
 
   function recordPayment(invoiceId: string, amount: number) {
@@ -776,7 +1210,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return { ...inv, paidAmount, status }
       }),
     )
-    addLedgerEntry({ date: TODAY, account: 'Service Revenue', description: `${invoice.number} payment received`, debit: 0, credit: amount })
+    addLedgerEntry({ date: todayIso(), account: 'Service Revenue', description: `${invoice.number} payment received`, debit: 0, credit: amount })
 
     const client = clients.find((c) => c.id === invoice.clientId)
     if (client) {
@@ -813,10 +1247,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   function addCreditNote(input: { kind: 'firm-issued' | 'client-advisory'; clientId: string; invoiceId?: string; reason: string; amount: number; vatAmount: number }) {
     setCreditNotes((prev) => {
       const number = `CN-2026-${String(prev.length + 1).padStart(3, '0')}`
-      return [...prev, { id: genId('cn'), number, issueDate: TODAY, ...input }]
+      return [...prev, { id: genId('cn'), number, issueDate: todayIso(), ...input }]
     })
     if (input.kind === 'firm-issued') {
-      addLedgerEntry({ date: TODAY, account: 'Credit Notes Issued', description: input.reason, debit: input.amount, credit: 0 })
+      addLedgerEntry({ date: todayIso(), account: 'Credit Notes Issued', description: input.reason, debit: input.amount, credit: 0 })
     }
   }
 
@@ -831,8 +1265,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  function updateExpense(id: string, patch: Partial<Omit<Expense, 'id'>>) {
+    setExpenses((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)))
+  }
+
+  function deleteExpense(id: string) {
+    setExpenses((prev) => prev.filter((e) => e.id !== id))
+  }
+
   function addWalletTransaction(input: { clientId: string; type: 'credit' | 'debit'; reason: string; amount: number }) {
-    setWalletTransactions((prev) => [...prev, { id: genId('w'), date: TODAY, ...input }])
+    setWalletTransactions((prev) => [...prev, { id: genId('w'), date: todayIso(), ...input }])
   }
 
   function applyWalletToInvoice(clientId: string, invoiceId: string, amount: number) {
@@ -907,6 +1349,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         penaltyFeeRule,
         pendingCharges,
         firmProfile,
+        activeStaff,
+        setActiveStaff,
+        signedIn,
+        signIn,
+        signInWithCredentials,
+        signOut,
+        staffMembers: DEFAULT_STAFF_MEMBERS,
+        can,
+        addAuditEntry,
         matters,
         addClient,
         updateClient,
@@ -914,6 +1365,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addDocumentType,
         linkDocumentToMatter,
         unlinkDocumentFromMatter,
+        addObligationType,
+        updateObligationType,
+        deleteObligationType,
+        registrationsUsingObligation,
         addRegistration,
         updateRegistration,
         deregisterRegistration,
@@ -926,6 +1381,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         canCloseClientYear,
         revertFilingToPending,
         addMatter,
+        openMatterForFiling,
         updateMatter,
         toggleMatterChecklistItem,
         addMatterChecklistItem,
@@ -942,6 +1398,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         waivePendingCharge,
         addCreditNote,
         addExpense,
+        updateExpense,
+        deleteExpense,
         addWalletTransaction,
         applyWalletToInvoice,
         updateReminderRule,

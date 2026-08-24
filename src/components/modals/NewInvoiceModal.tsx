@@ -3,10 +3,10 @@ import { Check, CornerDownRight } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input, Label, Select, ErrorText } from '../ui/Field'
-import { useData, TODAY } from '../../data/store'
+import { useData } from '../../data/store'
 import { effectivePrice, flattenServices } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
-import { addDays, cn, formatAED, sleep } from '../../lib/utils'
+import { addDays, cn, formatAED, sleep, todayIso } from '../../lib/utils'
 import { invoiceSubtotal, invoiceVat } from '../../lib/invoice'
 import type { Invoice, InvoiceLine } from '../../data/types'
 
@@ -15,12 +15,15 @@ export function NewInvoiceModal({
   onClose,
   defaultClientId,
   defaultMatterId,
+  defaultServiceIds,
   onCreated,
 }: {
   open: boolean
   onClose: () => void
   defaultClientId?: string
   defaultMatterId?: string
+  /** Services pre-ticked on open — the matter's own service when billing a filing. */
+  defaultServiceIds?: string[]
   onCreated?: (invoice: Invoice) => void
 }) {
   const { clients, services, addInvoice, pendingChargesForClient } = useData()
@@ -35,8 +38,8 @@ export function NewInvoiceModal({
   useEffect(() => {
     if (open) {
       setClientId(defaultClientId ?? clients[0]?.id ?? '')
-      setSelected([])
-      setDueDate(addDays(TODAY, 14))
+      setSelected((defaultServiceIds ?? []).filter((id) => services.some((s) => s.id === id)))
+      setDueDate(addDays(todayIso(), 14))
       setExcludedCharges([])
       setShowErrors(false)
     }

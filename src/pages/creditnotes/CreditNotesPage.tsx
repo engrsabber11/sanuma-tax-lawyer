@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Receipt, Building2, Users } from 'lucide-react'
 import { Card, CardBody } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { Select } from '../../components/ui/Field'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { Pagination } from '../../components/ui/Pagination'
 import { NewCreditNoteModal } from '../../components/modals/NewCreditNoteModal'
 import { useData } from '../../data/store'
 import { formatAED, formatDate } from '../../lib/utils'
@@ -13,8 +15,17 @@ export function CreditNotesPage() {
   const { creditNotes, clients, invoices } = useData()
   const [filter, setFilter] = useState<'all' | 'firm-issued' | 'client-advisory'>('all')
   const [newOpen, setNewOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
-  const rows = creditNotes.filter((c) => (filter === 'all' ? true : c.kind === filter))
+  const rows = useMemo(() => {
+    return creditNotes.filter((c) => (filter === 'all' ? true : c.kind === filter))
+  }, [creditNotes, filter])
+
+  const paginatedRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, page, pageSize])
 
   return (
     <div className="flex flex-col gap-5">
@@ -28,29 +39,40 @@ export function CreditNotesPage() {
         </Button>
       </div>
 
-      <div className="flex gap-2">
-        {[
-          { id: 'all', label: 'All' },
-          { id: 'firm-issued', label: 'Firm-Issued' },
-          { id: 'client-advisory', label: 'Client-Advisory' },
-        ].map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id as typeof filter)}
-            className={`rounded-lg border px-3.5 py-1.5 text-sm font-medium transition-colors ${
-              filter === f.id ? 'border-accent-500 bg-accent-50 text-accent-700 dark:bg-accent-900/20 dark:text-accent-400' : 'border-ink-200 text-ink-500 dark:border-ink-700'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'firm-issued', label: 'Firm-Issued' },
+            { id: 'client-advisory', label: 'Client-Advisory' },
+          ].map((f) => (
+            <button
+              key={f.id}
+              onClick={() => {
+                setFilter(f.id as typeof filter)
+                setPage(1)
+              }}
+              className={`rounded-lg border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                filter === f.id ? 'border-accent-500 bg-accent-50 text-accent-700 dark:bg-accent-900/20 dark:text-accent-400' : 'border-ink-200 text-ink-500 dark:border-ink-700'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <Select className="w-36" value={String(pageSize)} onChange={(e) => setPageSize(Number(e.target.value))}>
+          <option value="5">5 / page</option>
+          <option value="10">10 / page</option>
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+        </Select>
       </div>
 
       {rows.length === 0 ? (
         <EmptyState icon={<Receipt className="h-5 w-5" />} title="No credit notes" description="Credit notes adjusting an invoice, or prepared as advisory work for a client, will appear here." />
       ) : (
         <div className="flex flex-col gap-3">
-          {rows.map((cn) => {
+          {paginatedRows.map((cn) => {
             const client = clients.find((c) => c.id === cn.clientId)
             const invoice = invoices.find((i) => i.id === cn.invoiceId)
             return (
@@ -71,7 +93,7 @@ export function CreditNotesPage() {
                       <p className="mt-1 text-xs text-ink-400">
                         {client && (
                           <Link to={`/clients/${client.id}`} className="hover:text-accent-600 hover:underline">
-                            {client.name}
+                            {client.businessName || client.name}
                           </Link>
                         )}
                         {' · '}
@@ -95,6 +117,15 @@ export function CreditNotesPage() {
               </Card>
             )
           })}
+          <Card className="overflow-hidden">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              totalItems={rows.length}
+              onPageChange={setPage}
+              itemLabel="credit notes"
+            />
+          </Card>
         </div>
       )}
 

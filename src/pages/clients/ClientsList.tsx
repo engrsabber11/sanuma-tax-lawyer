@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Users } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
@@ -7,6 +7,7 @@ import { Avatar } from '../../components/ui/Avatar'
 import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Field'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { Pagination } from '../../components/ui/Pagination'
 import { useData } from '../../data/store'
 import type { BusinessType } from '../../data/types'
 import { daysUntil, formatAED, urgencyFromDate } from '../../lib/utils'
@@ -25,12 +26,14 @@ export function ClientsList() {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | BusinessType>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'onboarding' | 'inactive'>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const rows = useMemo(() => {
     return clients
       .filter((c) => (typeFilter === 'all' ? true : c.businessType === typeFilter))
       .filter((c) => (statusFilter === 'all' ? true : c.status === statusFilter))
-      .filter((c) => (c.name + (c.businessName ?? '')).toLowerCase().includes(query.toLowerCase()))
+      .filter((c) => (c.name + ' ' + (c.businessName ?? '')).toLowerCase().includes(query.toLowerCase()))
       .map((c) => {
         const docs = clientDocuments.filter((d) => d.clientId === c.id)
         const urgentCount = docs.filter((d) => urgencyFromDate(d.expiryDate) !== 'ok').length
@@ -44,6 +47,13 @@ export function ClientsList() {
         return { client: c, urgentCount, outstanding, referrer, subReferrer, nextUrgent }
       })
   }, [query, typeFilter, statusFilter, clients, clientDocuments, invoices])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, typeFilter, statusFilter, pageSize])
+
+  const startIndex = (page - 1) * pageSize
+  const paginatedRows = rows.slice(startIndex, startIndex + pageSize)
 
   return (
     <div className="flex flex-col gap-5">
@@ -77,6 +87,12 @@ export function ClientsList() {
             <option value="onboarding">Onboarding</option>
             <option value="inactive">Inactive</option>
           </Select>
+          <Select className="sm:w-36" value={String(pageSize)} onChange={(e) => setPageSize(Number(e.target.value))}>
+            <option value="5">5 / page</option>
+            <option value="10">10 / page</option>
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
+          </Select>
         </div>
       </Card>
 
@@ -105,7 +121,7 @@ export function ClientsList() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ client, urgentCount, outstanding, referrer, subReferrer }) => (
+                {paginatedRows.map(({ client, urgentCount, outstanding, referrer, subReferrer }) => (
                   <tr key={client.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/70 dark:border-ink-800/60 dark:hover:bg-ink-800/40">
                     <td className="px-5 py-3.5">
                       <Link to={`/clients/${client.id}`} className="flex items-center gap-3">
@@ -163,6 +179,14 @@ export function ClientsList() {
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            totalItems={rows.length}
+            onPageChange={setPage}
+            itemLabel="clients"
+          />
         </Card>
       )}
     </div>

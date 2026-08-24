@@ -3,19 +3,30 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input, Label, Select, ErrorText, invalidFieldClass } from '../ui/Field'
 import { Switch } from '../ui/Switch'
-import { useData, TODAY } from '../../data/store'
+import { useData } from '../../data/store'
 import { useToast } from '../../lib/toast'
-import { cn, sleep } from '../../lib/utils'
+import { cn, sleep, todayIso } from '../../lib/utils'
+import type { Expense } from '../../data/types'
 
 const CATEGORIES = ['Office Rent', 'Software', 'Government Fees', 'Marketing', 'Salaries', 'Utilities', 'Professional Fees', 'Other']
 
-export function NewExpenseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { clients, addExpense } = useData()
+export function NewExpenseModal({
+  open,
+  onClose,
+  expense,
+}: {
+  open: boolean
+  onClose: () => void
+  expense?: Expense | null
+}) {
+  const { clients, addExpense, updateExpense } = useData()
   const { show } = useToast()
+  const isEditing = !!expense
+
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState(CATEGORIES[0])
   const [amount, setAmount] = useState(0)
-  const [date, setDate] = useState(TODAY)
+  const [date, setDate] = useState(todayIso)
   const [isDisbursement, setIsDisbursement] = useState(false)
   const [clientId, setClientId] = useState('')
   const [billed, setBilled] = useState(false)
@@ -24,16 +35,26 @@ export function NewExpenseModal({ open, onClose }: { open: boolean; onClose: () 
 
   useEffect(() => {
     if (open) {
-      setDescription('')
-      setCategory(CATEGORIES[0])
-      setAmount(0)
-      setDate(TODAY)
-      setIsDisbursement(false)
-      setClientId(clients[0]?.id ?? '')
-      setBilled(false)
+      if (expense) {
+        setDescription(expense.description)
+        setCategory(expense.category)
+        setAmount(expense.amount)
+        setDate(expense.date)
+        setIsDisbursement(expense.isDisbursement)
+        setClientId(expense.clientId ?? clients[0]?.id ?? '')
+        setBilled(expense.billed ?? false)
+      } else {
+        setDescription('')
+        setCategory(CATEGORIES[0])
+        setAmount(0)
+        setDate(todayIso())
+        setIsDisbursement(false)
+        setClientId(clients[0]?.id ?? '')
+        setBilled(false)
+      }
       setShowErrors(false)
     }
-  }, [open])
+  }, [open, expense, clients])
 
   const descriptionError = !description.trim() ? 'Description is required' : null
   const amountError = amount <= 0 ? 'Amount must be greater than zero' : null
@@ -44,17 +65,32 @@ export function NewExpenseModal({ open, onClose }: { open: boolean; onClose: () 
       return
     }
     setSubmitting(true)
-    await sleep(400 + Math.random() * 200)
-    addExpense({
-      description,
-      category,
-      amount,
-      date,
-      isDisbursement,
-      clientId: isDisbursement ? clientId : undefined,
-      billed: isDisbursement ? billed : false,
-    })
-    show('Expense added')
+    await sleep(300 + Math.random() * 150)
+
+    if (isEditing && expense) {
+      updateExpense(expense.id, {
+        description,
+        category,
+        amount,
+        date,
+        isDisbursement,
+        clientId: isDisbursement ? clientId : undefined,
+        billed: isDisbursement ? billed : false,
+      })
+      show('Expense updated')
+    } else {
+      addExpense({
+        description,
+        category,
+        amount,
+        date,
+        isDisbursement,
+        clientId: isDisbursement ? clientId : undefined,
+        billed: isDisbursement ? billed : false,
+      })
+      show('Expense added')
+    }
+
     setSubmitting(false)
     onClose()
   }
@@ -63,30 +99,19 @@ export function NewExpenseModal({ open, onClose }: { open: boolean; onClose: () 
     <Modal
       open={open}
       onClose={onClose}
-      title="Add Expense"
+      title={isEditing ? 'Edit Expense' : 'Add Expense'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
           <Button onClick={submit} loading={submitting}>
-            Add Expense
+            {isEditing ? 'Save Changes' : 'Add Expense'}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        <div>
-          <Label>Description</Label>
-          <Input
-            placeholder="e.g. DED trade license renewal fee"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className={cn(showErrors && descriptionError && invalidFieldClass)}
-            autoFocus
-          />
-          {showErrors && descriptionError && <ErrorText>{descriptionError}</ErrorText>}
-        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <Label>Category</Label>
@@ -113,6 +138,16 @@ export function NewExpenseModal({ open, onClose }: { open: boolean; onClose: () 
           <Label>Date</Label>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
+        <div>
+          <Label>Description</Label>
+          <Input
+            placeholder="e.g. DED trade license renewal fee"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className={cn(showErrors && descriptionError && invalidFieldClass)}
+          />
+          {showErrors && descriptionError && <ErrorText>{descriptionError}</ErrorText>}
+        </div>
         <div className="flex items-center justify-between rounded-lg border border-ink-200/70 px-3.5 py-2.5 dark:border-ink-800">
           <div>
             <p className="text-sm font-medium text-ink-700 dark:text-ink-200">Client Disbursement</p>
@@ -123,17 +158,20 @@ export function NewExpenseModal({ open, onClose }: { open: boolean; onClose: () 
         {isDisbursement && (
           <>
             <div>
-              <Label>Client</Label>
+              <Label>Client / Business</Label>
               <Select value={clientId} onChange={(e) => setClientId(e.target.value)}>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {c.businessName ? `${c.businessName} (${c.name})` : c.name}
                   </option>
                 ))}
               </Select>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-ink-200/70 px-3.5 py-2.5 dark:border-ink-800">
-              <p className="text-sm font-medium text-ink-700 dark:text-ink-200">Already billed to client</p>
+              <div>
+                <p className="text-sm font-medium text-ink-700 dark:text-ink-200">Already billed to client</p>
+                <p className="text-xs text-ink-400">Mark as included on a client invoice</p>
+              </div>
               <Switch checked={billed} onChange={() => setBilled((v) => !v)} />
             </div>
           </>

@@ -1,4 +1,6 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { useData } from './data/store'
+import { LoginPage } from './pages/LoginPage'
 import { AppShell } from './components/layout/AppShell'
 import { Dashboard } from './pages/Dashboard'
 import { ClientsList } from './pages/clients/ClientsList'
@@ -19,8 +21,21 @@ import { ReferralsPage } from './pages/referrals/ReferralsPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 
 function App() {
+  const { signedIn } = useData()
+
+  // Everything sits behind the picker. Landing straight on the dashboard meant
+  // whoever opened the tab arrived as the Partner with full permissions.
+  if (!signedIn) {
+    return (
+      <Routes>
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    )
+  }
+
   return (
     <Routes>
+      <Route path="/login" element={<Navigate to="/" replace />} />
       <Route element={<AppShell />}>
         <Route path="/" element={<Dashboard />} />
 

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input, Label, Select, ErrorText, invalidFieldClass } from '../ui/Field'
-import { useData, TODAY } from '../../data/store'
+import { useData } from '../../data/store'
 import { useToast } from '../../lib/toast'
-import { addDays, cn, sleep } from '../../lib/utils'
+import { addDays, cn, sleep, todayIso } from '../../lib/utils'
 
 export function NewDocumentModal({
   open,
@@ -32,8 +32,8 @@ export function NewDocumentModal({
       setClientId(defaultClientId ?? clients[0]?.id ?? '')
       setTypeId(documentTypes[0]?.id ?? '')
       setNumber('')
-      setIssueDate(TODAY)
-      setExpiryDate(addDays(TODAY, 365))
+      setIssueDate(todayIso())
+      setExpiryDate(addDays(todayIso(), 365))
       setShowErrors(false)
     }
   }, [open, defaultClientId])

@@ -28,24 +28,24 @@ function checklistAt(serviceId: string, doneCount: number) {
 }
 
 export const documentTypes: DocumentTypeDef[] = [
-  { id: 'dt-eid', name: 'Emirates ID', category: 'personal', hasExpiry: true, defaultReminderDays: [60, 30, 7], defaultChannels: ['whatsapp', 'email'] },
-  { id: 'dt-passport', name: 'Passport', category: 'personal', hasExpiry: true, defaultReminderDays: [90, 30], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-eid', name: 'Emirates ID', category: 'personal', hasExpiry: true, defaultReminderDays: [60, 30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-passport', name: 'Passport', category: 'personal', hasExpiry: true, defaultReminderDays: [90, 30], defaultChannels: ['whatsapp', 'email', 'sms'] },
   { id: 'dt-visa', name: 'Residence Visa', category: 'personal', hasExpiry: true, defaultReminderDays: [90, 30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
-  { id: 'dt-labor', name: 'Labor / Establishment Card', category: 'personal', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp'] },
-  { id: 'dt-trade-license', name: 'Trade License', category: 'business', hasExpiry: true, defaultReminderDays: [60, 30, 7], defaultChannels: ['whatsapp', 'email'] },
-  { id: 'dt-chamber', name: 'Chamber of Commerce Certificate', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
-  { id: 'dt-municipality-permit', name: 'Municipality Trade/Food Permit', category: 'business', hasExpiry: true, defaultReminderDays: [45, 14], defaultChannels: ['whatsapp', 'email'] },
-  { id: 'dt-civil-defense', name: 'Civil Defense / Fire Safety NOC', category: 'business', hasExpiry: true, defaultReminderDays: [45, 14], defaultChannels: ['whatsapp', 'email'] },
-  { id: 'dt-ejari', name: 'Ejari (Tenancy Contract)', category: 'business', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp'] },
-  { id: 'dt-signage', name: 'Signage / Advertisement Permit', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
-  { id: 'dt-customs', name: 'Import/Export Customs Code', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
+  { id: 'dt-labor', name: 'Labor / Establishment Card', category: 'personal', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-trade-license', name: 'Trade License', category: 'business', hasExpiry: true, defaultReminderDays: [60, 30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-chamber', name: 'Chamber of Commerce Certificate', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-municipality-permit', name: 'Municipality Trade/Food Permit', category: 'business', hasExpiry: true, defaultReminderDays: [45, 14], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-civil-defense', name: 'Civil Defense / Fire Safety NOC', category: 'business', hasExpiry: true, defaultReminderDays: [45, 14], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-ejari', name: 'Ejari (Tenancy Contract)', category: 'business', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-signage', name: 'Signage / Advertisement Permit', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-customs', name: 'Import/Export Customs Code', category: 'business', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['whatsapp', 'email', 'sms'] },
   { id: 'dt-vat-cert', name: 'VAT Registration Certificate (TRN)', category: 'tax', hasExpiry: false, defaultReminderDays: [], defaultChannels: [] },
   { id: 'dt-corp-tax-cert', name: 'Corporate Tax Registration Certificate', category: 'tax', hasExpiry: false, defaultReminderDays: [], defaultChannels: [] },
   { id: 'dt-excise', name: 'Excise Tax Registration', category: 'tax', hasExpiry: false, defaultReminderDays: [], defaultChannels: [] },
-  { id: 'dt-ubo', name: 'UBO Declaration', category: 'tax', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
-  { id: 'dt-aml', name: 'AML/CTF (goAML) Registration', category: 'tax', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
-  { id: 'dt-bank-kyc', name: 'Bank Account KYC Documents', category: 'financial', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['email'] },
-  { id: 'dt-insurance', name: 'Insurance Policy', category: 'financial', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp', 'email'] },
+  { id: 'dt-ubo', name: 'UBO Declaration', category: 'tax', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-aml', name: 'AML/CTF (goAML) Registration', category: 'tax', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-bank-kyc', name: 'Bank Account KYC Documents', category: 'financial', hasExpiry: true, defaultReminderDays: [30], defaultChannels: ['whatsapp', 'email', 'sms'] },
+  { id: 'dt-insurance', name: 'Insurance Policy', category: 'financial', hasExpiry: true, defaultReminderDays: [30, 7], defaultChannels: ['whatsapp', 'email', 'sms'] },
 ]
 
 export const clients: Client[] = [
@@ -156,6 +156,9 @@ export const services: Service[] = [
   { id: 'svc-corp-tax-filing', name: 'Corporate Tax Return Filing', description: 'Annual Corporate Tax return preparation and filing.', price: 2500, vatApplicable: true },
   { id: 'svc-credit-note', name: 'Tax Credit Note Preparation', description: 'FTA-compliant tax credit note drafting and review.', price: 400, vatApplicable: true },
   { id: 'svc-esr-report', name: 'ESR Notification & Report', description: 'Economic Substance Regulations filing support.', price: 1200, vatApplicable: true },
+  // Added in Phase 7: the Excise obligation had no service, so a matter opened
+  // from an excise filing had nothing to bill against.
+  { id: 'svc-excise-return', name: 'Excise Tax Return Filing', description: 'Monthly excise tax return preparation and submission.', price: 900, vatApplicable: true },
   { id: 'svc-ubo-update', name: 'UBO Declaration Update', description: 'Ultimate Beneficial Owner declaration update.', price: 600, vatApplicable: true },
   { id: 'svc-vat-reg-doc-prep', parentId: 'svc-vat-reg', name: 'Document Preparation', description: 'Collecting and formatting the FTA registration pack.', price: 1500, vatApplicable: true },
   { id: 'svc-vat-reg-portal', parentId: 'svc-vat-reg', name: 'FTA Portal Submission', description: 'Submitting the registration application on EmaraTax.', price: 1500, vatApplicable: true },

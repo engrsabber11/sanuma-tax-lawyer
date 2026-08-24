@@ -27,6 +27,7 @@ interface DraftState {
   name: string
   businessName: string
   phone: string
+  whatsapp: string
   email: string
   personType: 'legal' | 'natural'
   businessType: BusinessType | ''
@@ -45,6 +46,7 @@ const emptyDraft: DraftState = {
   name: '',
   businessName: '',
   phone: '',
+  whatsapp: '',
   email: '',
   personType: 'legal',
   businessType: '',
@@ -164,8 +166,8 @@ export function ClientOnboarding() {
       businessName: draft.businessName || undefined,
       businessType: (draft.businessType || 'other') as BusinessType,
       personType: draft.personType,
-      phone: draft.phone,
-      whatsapp: draft.phone || undefined,
+      phone: draft.phone || draft.whatsapp,
+      whatsapp: draft.whatsapp || undefined,
       email: draft.email || `${draft.name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
       referredById: draft.referrerId ?? undefined,
       subReferredById: draft.subReferrerId ?? undefined,
@@ -221,12 +223,11 @@ export function ClientOnboarding() {
     setDone(false)
   }
 
-  // UAE mobile validation from origin/master — a malformed number breaks
-  // every WhatsApp/SMS reminder the system will later try to send.
-  const phoneValid = isUaeMobile(draft.phone)
+  // UAE mobile validation for WhatsApp/SMS notifications and reminders
+  const whatsappValid = isUaeMobile(draft.whatsapp)
   const skipRegistrations = draft.noRegistrations
   const canProceed = [
-    !!draft.name.trim() && phoneValid,
+    !!draft.name.trim() && whatsappValid,
     draft.obligations.length > 0 || skipRegistrations,
     // Only the effective date is genuinely required — TRN and cycle both have
     // usable defaults or are legitimately unknown at onboarding time.
@@ -328,31 +329,48 @@ export function ClientOnboarding() {
               {draft.step === 0 && (
                 <div className="flex flex-col gap-4">
                   <div>
-                    <Label>Full name *</Label>
-                    <Input placeholder="e.g. Ahmed Al Falasi" value={draft.name} onChange={(e) => update({ name: e.target.value })} autoFocus />
-                  </div>
-                  <div>
-                    <Label hint="optional">Business name</Label>
+                    <Label>
+                      Business name <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       placeholder="e.g. Al Falasi Grocery LLC"
                       value={draft.businessName}
                       onChange={(e) => update({ businessName: e.target.value })}
                     />
                   </div>
+                  <div>
+                    <Label>
+                      Contact person full name
+                    </Label>
+                    <Input placeholder="e.g. Ahmed Al Falasi" value={draft.name} onChange={(e) => update({ name: e.target.value })} autoFocus />
+                  </div>
+
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <Label>Phone / WhatsApp *</Label>
+                      <Label>
+                        WhatsApp <span className="text-red-500">*</span>
+                      </Label>
                       <PhoneInput
-                        value={draft.phone}
-                        onChange={(phone) => update({ phone })}
-                        className={cn(draft.phone && !phoneValid && invalidFieldClass)}
+                        value={draft.whatsapp}
+                        onChange={(whatsapp) => update({ whatsapp })}
+                        className={cn(draft.whatsapp && !whatsappValid && invalidFieldClass)}
                       />
-                      {draft.phone && !phoneValid && <ErrorText>Use a UAE mobile number, e.g. {UAE_MOBILE_PLACEHOLDER}</ErrorText>}
+                      {draft.whatsapp && !whatsappValid && <ErrorText>Use a UAE mobile number, e.g. {UAE_MOBILE_PLACEHOLDER}</ErrorText>}
                     </div>
                     <div>
-                      <Label hint="optional">Email</Label>
-                      <Input type="email" placeholder="name@example.com" value={draft.email} onChange={(e) => update({ email: e.target.value })} />
+                      <Label hint="optional">Alternative Phone</Label>
+                      <Input
+                        type="tel"
+                        placeholder="e.g. +971 4 123 4567"
+                        value={draft.phone}
+                        onChange={(e) => update({ phone: e.target.value })}
+                      />
                     </div>
+                  </div>
+
+                  <div>
+                    <Label hint="optional">Email</Label>
+                    <Input type="email" placeholder="name@example.com" value={draft.email} onChange={(e) => update({ email: e.target.value })} />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -438,7 +456,7 @@ export function ClientOnboarding() {
                 title={
                   !canProceed
                     ? draft.step === 0
-                      ? 'Enter a name and phone number to continue'
+                      ? 'Enter contact name and a valid UAE WhatsApp/mobile number to continue'
                       : draft.step === 1
                         ? 'Pick what you are handling, or choose "No tax registrations yet"'
                         : 'Enter the effective registration date for each registration'

@@ -40,13 +40,34 @@ export function daysUntil(iso: string) {
   return Math.round((target.getTime() - today.getTime()) / 86_400_000)
 }
 
-export type Urgency = 'ok' | 'warning' | 'danger'
+export type Urgency = 'ok' | 'warning' | 'danger' | 'critical'
 
-/** Shared thresholds: >30 days = ok, 0-30 days = warning, <0 = danger (expired/overdue). */
+/**
+ * How late something is, on one scale shared by filing deadlines and document
+ * expiries.
+ *
+ * `critical` exists because the overdue side used to be a single bucket with no
+ * ceiling: a return 24 days late and one 85 days late rendered identically, and
+ * they are not the same problem. UAE late-payment penalty is 2% immediately then
+ * 4% per month, so by day 31 a second cycle has accrued — which is why the
+ * boundary is 30 days and not a round number picked to suit the UI.
+ *
+ * The same logic holds for documents: a trade licence three months lapsed is
+ * worse than one lapsed last week, because fines accrue there too. One scale, so
+ * no screen has to ask which one it should be using.
+ */
+export const CRITICAL_AFTER_DAYS_OVERDUE = 30
+
 export function urgencyFromDays(days: number): Urgency {
+  if (days < -CRITICAL_AFTER_DAYS_OVERDUE) return 'critical'
   if (days < 0) return 'danger'
   if (days <= 30) return 'warning'
   return 'ok'
+}
+
+/** True for anything already past its date — `danger` or worse. */
+export function isOverdue(urgency: Urgency): boolean {
+  return urgency === 'danger' || urgency === 'critical'
 }
 
 export function urgencyFromDate(iso: string): Urgency {

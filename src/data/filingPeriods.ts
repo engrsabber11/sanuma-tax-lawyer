@@ -216,6 +216,27 @@ export function labelForPeriod(periodEnd: string, periodicity: Periodicity): str
     : `${from} ${naturalStartYear}–${to} ${end.y}`
 }
 
+/**
+ * What a matter opened against a filing period starts life as.
+ *
+ * Pure and exported so the store and the New Matter modal derive the same
+ * values: the modal shows them before the click, the store writes them on it,
+ * and a second source of truth would let the two disagree.
+ *
+ * `dueDate` is the filing due date, not the period end — the deadline is what
+ * the kanban and the matters list sort on.
+ */
+export function matterDefaultsForFiling(
+  period: FilingPeriod,
+  obligationType: ObligationType | undefined,
+): { title: string; serviceId?: string; dueDate: string } {
+  return {
+    title: `${obligationType?.name ?? 'Filing'} — ${period.label}`,
+    serviceId: obligationType?.serviceId,
+    dueDate: period.dueDate,
+  }
+}
+
 // --- the generator --------------------------------------------------------
 
 /** Runaway guard — a monthly filer over the widest sane horizon stays far under. */

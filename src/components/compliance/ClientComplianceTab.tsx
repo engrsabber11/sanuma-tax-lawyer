@@ -19,6 +19,7 @@ import { Input, Label, Select } from '../ui/Field'
 import { EmptyState } from '../ui/EmptyState'
 import { AddRegistrationModal } from '../modals/AddRegistrationModal'
 import { ReopenYearModal } from '../modals/ReopenYearModal'
+import { FtaSubmissionModal } from '../modals/FtaSubmissionModal'
 import { SchedulePreview, type ScheduleGroup } from '../onboarding/SchedulePreview'
 import { useData, TODAY } from '../../data/store'
 import { cycleDescription, staggerLabel } from '../../data/filingPeriods'
@@ -42,7 +43,6 @@ export function ClientComplianceTab({ clientId, clientName }: { clientId: string
     clientDocuments,
     documentTypes,
     auditLog,
-    markFilingFiled,
     markFilingNotRequired,
     revertFilingToPending,
     closeClientYear,
@@ -67,6 +67,7 @@ export function ClientComplianceTab({ clientId, clientName }: { clientId: string
   const [taxYear, setTaxYear] = useState(() => Number(TODAY.slice(0, 4)))
   const [addOpen, setAddOpen] = useState(false)
   const [reopenOpen, setReopenOpen] = useState(false)
+  const [ftaFilingFor, setFtaFilingFor] = useState<FilingPeriod | null>(null)
   const [editing, setEditing] = useState<Registration | null>(null)
 
   const year = clientYears.find((y) => y.clientId === clientId && y.taxYear === taxYear)
@@ -243,10 +244,7 @@ export function ClientComplianceTab({ clientId, clientName }: { clientId: string
                     period={p}
                     obligationName={obligationTypes.find((t) => t.id === p.obligationTypeId)?.name ?? 'Filing'}
                     locked={closed}
-                    onMarkFiled={() => {
-                      markFilingFiled(p.id)
-                      show(`${p.label} marked filed`)
-                    }}
+                    onMarkFiled={() => setFtaFilingFor(p)}
                     onMarkNotRequired={() => {
                       markFilingNotRequired(p.id)
                       show(`${p.label} marked not required`)
@@ -299,6 +297,11 @@ export function ClientComplianceTab({ clientId, clientName }: { clientId: string
         taxYear={taxYear}
       />
       <EditRegistrationModal registration={editing} onClose={() => setEditing(null)} />
+      <FtaSubmissionModal
+        open={!!ftaFilingFor}
+        onClose={() => setFtaFilingFor(null)}
+        period={ftaFilingFor}
+      />
     </div>
   )
 }
@@ -384,7 +387,14 @@ function YearFilingRow({
         <p className="truncate text-sm text-ink-800 dark:text-ink-100">
           {obligationName} — {period.label}
         </p>
-        <p className="text-xs text-ink-400">Due {formatDate(period.dueDate)}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-ink-400">Due {formatDate(period.dueDate)}</p>
+          {period.ftaReferenceNo && (
+            <Badge tone="success" size="sm">
+              FTA: {period.ftaReferenceNo}
+            </Badge>
+          )}
+        </div>
       </div>
       <Badge
         tone={period.state === 'filed' ? 'success' : period.state === 'not-required' ? 'neutral' : 'warning'}

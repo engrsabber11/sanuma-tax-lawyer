@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Lock, Globe2, Building } from 'lucide-react'
+import { Plus, Lock, Globe2, Building, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -10,17 +10,40 @@ import { isUaePhone, UAE_MOBILE_PLACEHOLDER } from '../../lib/phone'
 import { cn } from '../../lib/utils'
 import { Tabs } from '../../components/ui/Tabs'
 import { NewDocumentTypeModal } from '../../components/modals/NewDocumentTypeModal'
+import { ObligationTypeModal } from '../../components/modals/ObligationTypeModal'
 import { useData } from '../../data/store'
+import { cycleDescription } from '../../data/filingPeriods'
+import { serviceLabelById } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
 import { Avatar } from '../../components/ui/Avatar'
+import type { DueRule, ObligationType } from '../../data/types'
 
 const categoryLabel: Record<string, string> = { personal: 'Personal', business: 'Business', tax: 'Tax & Regulatory', financial: 'Financial' }
 
+/** Plain-language due rule, so the table is readable without decoding a union. */
+function dueRuleText(rule: DueRule): string {
+  if (rule.kind === 'last-day-next-month') return 'Last day of the following month'
+  if (rule.kind === 'day-of-next-month') return `${rule.day}th of the following month`
+  if (rule.kind === 'months-after-period-end') return `${rule.months} months after period end`
+  return 'On the expiry date'
+}
+
 export function SettingsPage() {
-  const { documentTypes, firmProfile, updateFirmProfile, penaltyFeeRule, updatePenaltyFeeRule } = useData()
+  const {
+    documentTypes,
+    obligationTypes,
+    services,
+    firmProfile,
+    updateFirmProfile,
+    penaltyFeeRule,
+    updatePenaltyFeeRule,
+    deleteObligationType,
+    registrationsUsingObligation,
+  } = useData()
   const { show } = useToast()
   const [tab, setTab] = useState('profile')
   const [addTypeOpen, setAddTypeOpen] = useState(false)
+  const [obligationModal, setObligationModal] = useState<{ open: boolean; editing: ObligationType | null } | null>(null)
   const [draft, setDraft] = useState(firmProfile)
   const [penaltyDraft, setPenaltyDraft] = useState(penaltyFeeRule)
 
@@ -35,6 +58,13 @@ export function SettingsPage() {
   function saveProfile() {
     updateFirmProfile(draft)
     show('Business profile updated')
+  }
+
+  function removeObligation(type: ObligationType) {
+    const result = deleteObligationType(type.id)
+    // The refusal reason is the whole point of the interaction — a delete that
+    // just does nothing reads as a broken button.
+    show(result.ok ? `${type.name} deleted` : (result.reason ?? 'That obligation cannot be deleted.'))
   }
 
   function savePenaltyRule() {
@@ -205,6 +235,107 @@ export function SettingsPage() {
       {tab === 'compliance' && (
         <Card>
           <CardHeader>
+            <CardTitle>Obligation Catalog</CardTitle>
+            <Button
+              size="sm"
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => setObligationModal({ open: true, editing: null })}
+            >
+              Add Obligation
+            </Button>
+          </CardHeader>
+          <CardBody className="pt-2">
+            <p className="mb-3 text-sm text-ink-500 dark:text-ink-400">
+              Every obligation the firm handles, and the rules that generate its filing periods. Adding one here is all
+              it takes to start scheduling a filing the system did not previously know about — no code change.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 dark:border-ink-800">
+                    <th className="py-3 pr-4 font-medium">Obligation</th>
+                    <th className="py-3 pr-4 font-medium">Cycle</th>
+                    <th className="py-3 pr-4 font-medium">Due</th>
+                    <th className="py-3 pr-4 font-medium">Billed as</th>
+                    <th className="py-3 pr-4 font-medium">Reminders</th>
+                    <th className="py-3 pr-4 font-medium">In use</th>
+                    <th className="py-3 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {obligationTypes.map((t) => {
+                    const inUse = registrationsUsingObligation(t.id).length
+                    return (
+                      <tr key={t.id} className="border-b border-ink-50 last:border-0 dark:border-ink-800/60">
+                        <td className="py-3 pr-4">
+                          <span className="font-medium text-ink-800 dark:text-ink-100">{t.name}</span>
+                          <Badge tone={t.builtIn ? 'neutral' : 'accent'} size="sm" className="ml-2 align-middle">
+                            {t.builtIn ? 'built-in' : 'custom'}
+                          </Badge>
+                        </td>
+                        <td className="py-3 pr-4 text-ink-500 dark:text-ink-400">
+                          {cycleDescription(t.periodicity, {
+                            staggerGroup: t.staggerOptions?.[0],
+                            fiscalYearEndMonth: t.fiscalYearEndMonth,
+                          })}
+                        </td>
+                        <td className="py-3 pr-4 text-ink-500 dark:text-ink-400">{dueRuleText(t.dueRule)}</td>
+                        <td className="py-3 pr-4 text-ink-500 dark:text-ink-400">
+                          {t.serviceId ? serviceLabelById(t.serviceId, services) : <span className="text-ink-300 dark:text-ink-600">—</span>}
+                        </td>
+                        <td className="py-3 pr-4 text-ink-500 dark:text-ink-400">
+                          {t.defaultReminderDays.length
+                            ? t.defaultReminderDays.map((d) => (d === 0 ? 'day' : `${d}d`)).join(', ')
+                            : '—'}
+                        </td>
+                        <td className="py-3 pr-4 text-ink-500 dark:text-ink-400">
+                          {inUse > 0 ? `${inUse} registration${inUse === 1 ? '' : 's'}` : <span className="text-ink-300 dark:text-ink-600">unused</span>}
+                        </td>
+                        <td className="py-3">
+                          <div className="flex justify-end gap-1">
+                            <button
+                              onClick={() => setObligationModal({ open: true, editing: t })}
+                              title={`Edit ${t.name}`}
+                              aria-label={`Edit ${t.name}`}
+                              className="rounded-lg p-2 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-ink-700 dark:hover:text-ink-200"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => removeObligation(t)}
+                              disabled={t.builtIn || inUse > 0}
+                              title={
+                                t.builtIn
+                                  ? 'Built-in obligations cannot be deleted'
+                                  : inUse > 0
+                                    ? `${inUse} registration${inUse === 1 ? '' : 's'} still use this`
+                                    : `Delete ${t.name}`
+                              }
+                              aria-label={`Delete ${t.name}`}
+                              className={cn(
+                                'rounded-lg p-2 transition-colors',
+                                t.builtIn || inUse > 0
+                                  ? 'cursor-not-allowed text-ink-300 dark:text-ink-600'
+                                  : 'text-ink-400 hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/10',
+                              )}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {tab === 'compliance' && (
+        <Card>
+          <CardHeader>
             <CardTitle>Tax Year Controls</CardTitle>
           </CardHeader>
           <CardBody className="flex flex-col gap-4 pt-2">
@@ -287,6 +418,16 @@ export function SettingsPage() {
       )}
 
       <NewDocumentTypeModal open={addTypeOpen} onClose={() => setAddTypeOpen(false)} />
+      {obligationModal && (
+        // Keyed so the draft is built fresh for whichever row was clicked,
+        // without a reset-on-open effect inside the dialog.
+        <ObligationTypeModal
+          key={obligationModal.editing?.id ?? 'new'}
+          open={obligationModal.open}
+          onClose={() => setObligationModal(null)}
+          editing={obligationModal.editing}
+        />
+      )}
     </div>
   )
 }

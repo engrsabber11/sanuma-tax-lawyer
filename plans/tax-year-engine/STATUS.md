@@ -1,9 +1,11 @@
 # Tax Year & Filing Obligation Engine — Execution Status
 
 **Last updated:** 2026-08-24
-**Overall:** **6 of 8 phases complete** — the spine is built, onboarding
-generates the calendar, the lawyer has a worklist, tax years close and reopen
-with a trail, and reminders now fire on filing deadlines as well as documents.
+**Overall:** **8 of 8 phases complete.** The spine is built, onboarding generates
+the calendar, the lawyer has a worklist, tax years close and reopen with a trail,
+reminders fire on filing deadlines as well as documents, a due return becomes a
+matter and then a billed invoice, and the firm can add its own obligations
+without a code change.
 
 Also merged `origin/master` (PR #1, Muhammad Hannan) into this line of work —
 see the merge note below.
@@ -24,8 +26,8 @@ with "done" — the `matters-scale` plan's `PROGRESS.md` is the model to follow.
 | 4 | Filings page | `phases/PHASE-04-filings-page.md` | **done** | `/filings` live; filter counts recorded below; 16 routes, 0 console errors. |
 | 5 | Compliance tab + year close/reopen | `phases/PHASE-05-compliance-tab-and-year.md` | **done** | Close blocked at 3 outstanding; reopen needs a reason; audit persists. Output below. |
 | 6 | Unified reminder engine | `phases/PHASE-06-reminder-engine.md` | **done** | 21 rules (6 filing + 15 migrated document); T-7 milestone verified by hand; 16 routes, 0 console errors. |
-| 7 | Filing → Matter → Invoice chain | `phases/PHASE-07-filing-matter-invoice.md` | pending | — |
-| 8 | Dashboard, vault, settings, cleanup | `phases/PHASE-08-dashboard-and-cleanup.md` | pending | — |
+| 7 | Filing → Matter → Invoice chain | `phases/PHASE-07-filing-matter-invoice.md` | **done** | Chain closes end to end; second open navigates, no duplicate; declining leaves the filing pending; 18 routes, 0 console errors. Output below. |
+| 8 | Dashboard, vault, settings, cleanup | `phases/PHASE-08-dashboard-and-cleanup.md` | **done** | Custom obligation created and scheduled end to end; built-in edit survives reload; deletion table empty; 25 routes + tabs, 0 console errors. Output below. |
 
 Status values: `pending` · `in-progress` · `blocked` · `done`
 
@@ -416,6 +418,405 @@ a seed-authoring constant. Worth doing before it caused a fourth.
 
 ---
 
+## Phase 7 - verified output (2026-08-24)
+
+`tsc -b` clean * lint 13 findings, identical to the pre-change baseline (measured
+by stashing) * 18 routes, **0 console errors** * `package.json` /
+`package-lock.json` unchanged (Playwright installed `--no-save`, uninstalled
+after; npm had rewritten the `name` field, reverted).
+
+### The chain, walked end to end on c3's Aug-Oct 2026 VAT return
+
+c3 is the `feb-may-aug-nov` stagger client, so this is a period no calendar-quarter
+model would produce.
+
+```
+FILINGS ROW   VAT Return - Aug-Oct 2026 | Rashid Mart | 01 Aug - 31 Oct 2026 | Due 30 Nov 2026
+
+MODAL         title  "Open Matter for Filing"
+              reads  Files VAT Return - Aug-Oct 2026
+                     Period 01 Aug 2026 - 31 Oct 2026 . due 30 Nov 2026
+              client select disabled=true   (set by the filing)
+              title  "VAT Return - Aug-Oct 2026"      <- auto-titled
+              service VAT Return Filing               <- ObligationType.serviceId
+              due     2026-11-30                      <- the FILING due date
+
+MATTER        VAT Return - Aug-Oct 2026
+              VAT Return Filing . Opened 24 Aug 2026
+              checklist 0/6 done, 6 steps attached
+
+FILING CARD   Filing | Outstanding
+              VAT Return - Aug-Oct 2026
+              Period 01 Aug 2026 - 31 Oct 2026 . due 30 Nov 2026
+              Rashid Mart . tax year 2026        <- links back to the client year
+
+INVOICE       INV-2026-1008 . Issued 24 Aug 2026 . Due 07 Sept 2026
+              service: VAT Return Filing = 750
+              penalty: Minimum engagement fee   = 250   (c3's pre-existing pc-1)
+              subtotal 1000 . VAT 50 . total 1050
+```
+
+Persisted record after the walk — both back-links written:
+
+```
+matter   { title: "VAT Return - Aug-Oct 2026", serviceId: svc-vat-return,
+           dueDate: 2026-11-30, status: completed, steps: 6 }
+period   { label: "Aug-Oct 2026", state: filed, filedAt: 2026-08-24,
+           matterId: m-..., invoiceId: inv-... }
+```
+
+### The checks that had to fail as well as pass
+
+| Check | Result |
+|---|---|
+| Auto-generated title | `VAT Return — Aug–Oct 2026` (and `Corporate Tax Return — FY 2025` shape for annual) |
+| Due date | `2026-11-30` — the filing due date, not the 31 Oct period end |
+| Second "Open matter" | row shows a `matter` badge; button reads **Go to matter** and navigates to the *same* id; no modal, no second matter |
+| Complete → follow-ups | modal offered; `Mark the filing as filed` ticked by default, `Create the invoice` **not** |
+| **Declining** | "Skip for now" → filing still `Outstanding`, still listed on `/filings`. It does not flip anyway. |
+| Accepting | filing → `Filed`; invoice modal opens with **1** service pre-ticked (`VAT Return Filing AED 750`) |
+| Invoice back-link | `FilingPeriod.invoiceId` set; row gains a `billed` badge; invoice on the client's Invoices tab |
+| Reload after each step | matter, filing state, and both links persist |
+| Standalone New Matter | title `New Matter`, client select enabled, nothing pre-filled, no filing line — unchanged |
+| Revert a filed filing | `filed` → `outstanding`; `matter` and `billed` badges both still present; audit written |
+| Console errors | **0** across 18 routes |
+
+Audit entry after the revert:
+
+```
+24 Aug 2026
+Filing reopened for amendment - Aug-Oct 2026
+"Reopened for amendment"
+by Sanuma Tax Advisory FZE
+```
+
+### Checklist coverage — the gap the phase file asked us to check
+
+Every obligation now resolves to a service that has a template. Excise had no
+`serviceId` at all, so a matter opened from an excise return would have had
+nothing to bill against:
+
+```
+VAT Return                   svc-vat-return        VAT Return Filing
+VAT Return (Monthly Filer)   svc-vat-return        VAT Return Filing
+Corporate Tax Return         svc-corp-tax-filing   Corporate Tax Return Filing
+Excise Tax Return            svc-excise-return     Excise Tax Return Filing   <- added
+ESR Notification             svc-esr-report        ESR Notification & Report
+ESR Report                   svc-esr-report        ESR Notification & Report
+```
+
+`svc-excise-return` (AED 900) and its 6-step template are new; the ESR pair
+already shared a template that covers notification and report, so it was left
+alone. Because `obligationTypes` is persisted and has no editor until Phase 8,
+built-in types are now re-hydrated from code on load — otherwise a tester with
+saved state would never see the new `serviceId`.
+
+### Three defects the browser check caught
+
+1. **The penalty fee fired on every scheduled return.** `NewMatterModal` defaults
+   to firm-initiated, so opening a matter from the compliance calendar queued a
+   `Minimum engagement fee`. `SanumaBusinessFundamentalBn.md` §5 charges that fee
+   when the *client's* delay forces the firm to act — a return filed on its own
+   schedule is the engagement being performed. Filing-driven matters now default
+   to no fee, with a line in the modal saying so; the toggle stays for the case
+   where a client really did stonewall.
+2. **A return filed today was recorded as filed 21 Jul 2026** — the seed's
+   `TODAY`. Same defect Phase 6 fixed for the reminder log, and worse here:
+   `filedAt` is the answer to an FTA late-filing penalty.
+3. **The invoice was issued before it was created, and due before it was issued.**
+   `issueDate` came from `TODAY` (21 Jul) while the filing said 24 Aug, and the
+   default `dueDate` was `TODAY + 14` = 4 Aug — a tax invoice dated after its own
+   due date. Now 24 Aug / 7 Sept.
+
+### The frozen clock, finished
+
+Phase 6 declared `todayIso()` "the single answer to what is today" and `TODAY`
+"purely a seed-authoring constant", but only the reminder log was converted. Two
+of the three defects above are the unconverted remainder, so the rule is now
+actually applied: **every record the store writes about something that just
+happened** — `filedAt`, audit `at`, `closedAt` / `reopenedAt`, invoice
+`issueDate`, credit-note `issueDate`, every ledger line, wallet transactions,
+pending-charge `createdAt` / `waivedAt`, matter `openedAt` / `completedAt`, quote
+and client and registration `createdAt` — plus the "now" defaults in the invoice,
+document and expense forms.
+
+Deliberately left on `TODAY`, because they anchor the demo to the year that has
+data rather than recording an event:
+
+| Site | Why |
+|---|---|
+| `currentTaxYear()` → `horizonYear()` | sets how far the generator runs; the seeded filed-history is written against the seed's year, so reading the real clock would generate a different number of periods than the seed marked filed |
+| Tax-year `Select` defaults on `/filings`, the Compliance tab, onboarding | opening on the real year would show an empty page once real time crosses into 2027 |
+
+### Not a defect: the AED 250 on the invoice
+
+The invoice carries a second line, `Minimum engagement fee — firm-initiated
+matter`. That is c3's seeded `pc-1` (the UBO matter, firm-initiated in the seed)
+being picked up by the client's next invoice, exactly as the penalty-fee feature
+intends. The filing's own line is `750 + 5% VAT`; the fee is a separate line with
+its own VAT treatment.
+
+### Follow-up raised
+
+There is still no test runner, so this phase's chain — like Phase 1's 27 golden
+cases — is asserted only by a scratch Playwright script that was deleted. The
+`openMatterForFiling` duplicate guard is exactly the kind of invariant a later
+phase can break silently.
+
+---
+
+## Phase 8 - verified output (2026-08-24)
+
+Phase 8's own gate is the whole-app pass, not just its own screens: **25 routes
+plus every client tab and every settings tab, 0 console errors.** `npm run lint`
+13 findings, identical to the baseline, none in any Phase 8 file.
+`package.json` / `package-lock.json` unchanged.
+
+`tsc -b` was clean at the time of the browser run. It is **not** clean now, for
+reasons outside this phase - see the note at the end.
+
+### Deletion table - every row confirmed empty
+
+```
+ComplianceDeadline        0 references
+complianceDeadlines       0 references
+Recurrence                0 references
+businessTypes[].checklist 0 references
+```
+
+Phase 2 had already removed these, so this phase verified rather than deleted.
+`BusinessType` itself and the suggested-documents mapping are kept, as the phase
+file instructs.
+
+### Dashboard
+
+```
+greeting          Good afternoon - 24 Aug 2026        (the real date, not the seed's)
+tax year row      Tax year 2026 | 9 Filed | 25 Still due | 5 Overdue | All filings ->
+store agrees      34 in 2026 = 9 filed + 25 pending + 0 n/a   adds up: true
+
+Upcoming Filings          VAT Return (Monthly Filer) - Apr 2026
+                          Hassan Trading Co. * 31 May 2026 * 85d overdue
+/filings first row        VAT Return (Monthly Filer) - Apr 2026
+                          Hassan Trading Co. * Due 31 May 2026 * 85d overdue    <- same row
+
+Needs Chasing Today       VAT Return May-Jul 2026 is due in 7 days
+                            Rashid Mart * T-7 * to send
+                          VAT Return (Monthly Filer) Jul 2026 is due in 7 days
+                            Hassan Trading Co. * T-7 * to send
+```
+
+The internal-reminder card is the only place in the app that answers "what does
+the firm have to chase today" - the rules page is organised by rule, so a
+milestone landing today is not visible there.
+
+### Document vault calendar
+
+The calendar was hardcoded to `year = 2026, month = 6`. Every filing due outside
+July 2026 - which is almost all of them - was invisible on the one view whose job
+is to show when things land. Now it opens on the real month and navigates:
+
+```
+opens on            August 2026 * 10 due
+31 Aug cell         VAT Return - May-Jul 2026 | VAT Return (Monthly Filer) - Jul 2026
+3x next month       November 2026 * 3 due
+30 Nov cell         VAT Return - Aug-Oct 2026 | VAT Return (Monthly Filer) - Oct 2026
+"Today"             returns to August 2026
+```
+
+Those two cells are the point of the phase: `31 Aug` and `30 Nov` are the due
+dates of c3's staggered `feb-may-aug-nov` VAT returns, landing on the right days
+next to document expiries.
+
+### Obligation catalog - the full custom path, end to end
+
+Settings -> Compliance now lists the catalog with its generating rules:
+
+```
+VAT Return                 built-in  Quarterly * Jan-Mar, Apr-Jun...  Last day of following month   5 registrations
+VAT Return (Monthly Filer) built-in  Monthly * calendar month         Last day of following month   1 registration
+Corporate Tax Return       built-in  Annual * FY ends December        9 months after period end     4 registrations
+Excise Tax Return          built-in  Monthly * calendar month         15th of the following month   unused
+ESR Notification           built-in  Annual * FY ends December        6 months after period end     unused
+ESR Report                 built-in  Annual * FY ends December        12 months after period end    unused
+```
+
+Then the phase file's end-to-end case - create "Municipality Return", quarterly,
+28th of the following month, and attach it to a client:
+
+```
+CREATED   {"name":"Municipality Return","shortName":"MUN","periodicity":"quarterly",
+           "dueRule":{"kind":"day-of-next-month","day":28},"builtIn":false,
+           "staggerOptions":[all three],"defaultReminderDays":[30,15,7,0]}
+          reminder rule auto-created * days [30,15,7,0] * audience both
+
+OFFERED   c7's registration picker: VAT Return, VAT Return (Monthly Filer),
+          Corporate Tax Return, Excise Tax Return, ESR Notification, ESR Report,
+          Municipality Return                                    <- appears with no code change
+
+DERIVED   live in the dialog: First period 01 Feb 2026 - 31 Mar 2026
+                              first return due 28 Apr 2026
+
+GENERATED 8 periods
+          Jan-Mar 2026  2026-02-01..2026-03-31  due 2026-04-28   <- stub first period
+          Apr-Jun 2026  2026-04-01..2026-06-30  due 2026-07-28
+          Jul-Sep 2026  2026-07-01..2026-09-30  due 2026-10-28
+```
+
+### Delete and edit constraints
+
+| Case | Result |
+|---|---|
+| Delete a built-in | disabled - *"Built-in obligations cannot be deleted"* |
+| Delete an unused custom | enabled |
+| Delete a custom now in use | disabled - *"1 registration still use this"*; the table's **In use** column shows the same count |
+| Edit a custom's due rule with 1 registration | warning shown, then due dates moved `28 Apr 2026` -> `31 Dec 2026` (28th-of-next-month -> 9-months-after) |
+
+### Editing a built-in - filed history untouched
+
+The plan's **open decision #2** was whether VAT is due on the 28th or the last
+day of the following month. It is now a setting, not a code change. Switching
+`VAT Return` to the statutory 28th, with 87 filed periods on the books:
+
+```
+rule now          {"kind":"day-of-next-month","day":28}
+filed count       87 -> 87                unchanged
+filed dates       fp-reg-1-2019-01-15  2019-01-15..2019-03-31  due 2019-04-30   unchanged
+                  fp-reg-1-2019-04-01  2019-04-01..2019-06-30  due 2019-07-31   unchanged
+pending moved     Apr-Jun 2026 due 2026-07-28
+                  Jul-Sep 2026 due 2026-10-28
+                  Oct-Dec 2026 due 2027-01-28
+```
+
+Filed periods keep the dates they were filed under - those are what went to the
+authority. Phase 2's locking rule did the work; this phase only had to route the
+catalog edit through it.
+
+### One defect the browser check caught
+
+**A built-in edit was silently reverted on every reload.** Phase 7 added
+`hydrateObligationTypes` with seed-wins precedence, so that a built-in gaining a
+new field in code would reach saved state. Once Phase 8 made built-ins editable
+that precedence became wrong: a firm changing the VAT due rule would find it
+reset on refresh, with no error to explain it. The merge is now field-level with
+stored winning, so both hold - a firm's edit survives, and a field the code adds
+later still arrives. Verified after reload:
+
+```
+built-in edit survived hydration: {"kind":"day-of-next-month","day":28}
+catalog size 7 * custom kept true
+```
+
+### Two design notes
+
+- **Changing a type's `periodicity` had to move its registrations too.** A
+  `Registration` stores its own periodicity, copied at creation, and
+  `generateFilingPeriods` reads it from there - so patching only the catalog
+  would have left the table saying *monthly* while every schedule quietly stayed
+  quarterly. The cascade re-derives each affected registration's first period and
+  regenerates in a single state update.
+- **The fixed-day due rule is clamped to 28.** A rule saying "the 31st" silently
+  means the 30th in April and the 28th in February; the only honest fixed day is
+  one that exists in every month.
+
+### Not clean at hand-off: `tsc -b` — since repaired, see the section below
+
+There are 34 remaining `tsc` errors and 19 extra lint findings, **none in Phase 8
+code**. They are in work being done in parallel in this same tree, in files this
+phase did not touch: `ClientTimelineTab.tsx` (11), `DocumentPreviewModal.tsx`
+(5), `FtaSubmissionModal.tsx` (2), plus `store.tsx` (7) where `AuditEntry` gained
+a required `actor` field that the existing `addAuditEntry` call sites do not yet
+pass, and unused-import errors in `FilingsPage.tsx` / `ClientComplianceTab.tsx`
+left by an in-progress `markFilingFiled` refactor.
+
+Phase 8's own code typechecked cleanly, and the browser pass above ran green,
+before those edits landed. The build needs that parallel work finished before
+`tsc -b` is green again - it is not a Phase 8 regression, and it should not be
+fixed by guessing at someone else's half-written feature.
+
+---
+
+## Build repaired after Phase 8 (2026-08-24)
+
+The Phase 8 note below records `tsc -b` failing with 29 errors from parallel work
+in this tree. Those are fixed. **`tsc -b` clean · `npm run build` succeeds ·
+lint 14 · 22 routes + every tab, 0 console errors.**
+
+Most were dead imports, but three were real bugs that would have shipped:
+
+### 1. Audit entries could be written with no actor
+
+`addAuditEntry` was typed `Omit<AuditEntry, 'id' | 'at'>`, making `actor`
+mandatory, while its body read `actor: input.actor || activeStaff.name` — so the
+intent was clearly that callers may omit it. Four call sites did
+(`registration-edited`, `year-closed`, `year-reopened`, `filing-reverted`), and
+none of them compiled.
+
+Worse, the object spread ran `actor:` **before** `...input`, so on the paths that
+did compile an omitted `actor` overwrote the resolved name with `undefined`
+(TS2783). An audit trail that cannot say who did something is not an audit trail.
+
+Signature is now `Omit<AuditEntry, 'id' | 'at' | 'actor'> & { actor?: string }`,
+the spread order is fixed, and `actor` is passed only to attribute an act to
+someone other than the signed-in user. Verified across all five actions:
+
+```
+registration-edited    actor="Adv. Muhammad Hannan"  at=2026-08-24T14:20:00
+filing-submitted       actor="Adv. Muhammad Hannan"  at=2026-08-24T14:20:02
+year-closed            actor="Adv. Muhammad Hannan"  at=2026-08-24T14:20:06
+year-reopened          actor="Adv. Muhammad Hannan"  at=2026-08-24T14:20:08
+                       note="FTA raised a query on the Apr-Jun return..."
+
+entries missing an actor: 0        valid timestamps: 6/6
+```
+
+### 2. The client timeline showed the wrong invoice amount
+
+`ClientTimelineTab` summed `i.lines.reduce((s, l) => s + l.amount, 0)`, but
+`InvoiceLine` has `qty` and `unitPrice` — there is no `amount`. It now calls
+`invoiceTotal(i)`, the helper the rest of the app uses, rather than
+reimplementing the total and its per-line VAT rules a second time. The same
+component read `CreditNote.issuedAt`, which does not exist either; the field is
+`issueDate`.
+
+```
+Invoice Issued: #INV-2026-1005 (AED 997.50)     <- was AED 0
+Invoice Issued: #INV-2026-1004 (AED 997.50)
+NaN / Invalid anywhere on the page: false
+```
+
+### 3. Two modals passed props `Modal` did not have
+
+`FtaSubmissionModal` and `DocumentPreviewModal` both passed `subtitle` and
+`size="lg"`; `Modal` accepted neither (it had `width`, taking a raw Tailwind
+class). Rather than strip the props from the callers, `Modal` gained both, since
+a context line under the title is worth having and two callers already wanted it:
+
+- `subtitle?: string` — rendered under the title, truncating
+- `size?: 'sm' | 'md' | 'lg' | 'xl'` — named, mapped to a max-width
+- `width` kept and still wins when both are given, so existing callers are untouched
+
+```
+FtaSubmissionModal    title "Record FTA Return Submission"
+                      subtitle "VAT Return — May–Jul 2026"
+                      max-w-2xl                          (size="lg")
+ObligationTypeModal   max-w-xl, no subtitle rendered     (width="max-w-xl", unchanged)
+NewMatterModal        max-w-lg                           (neither prop, default)
+```
+
+### The rest
+
+Dead imports and one unused local, removed: `ClientTimelineTab` (8),
+`DocumentPreviewModal` (4), `Topbar` (2), `FtaSubmissionModal` (1), `store.tsx`
+(1), plus a `markFilingFiled` left destructured but uncalled in `FilingsPage` and
+`ClientComplianceTab` after submission moved into `FtaSubmissionModal`.
+
+Lint is 14 rather than the long-standing 13: the extra is a second
+`only-export-components` in `store.tsx`, from a non-component export added in
+parallel. Same class as the ones `theme.tsx` and `toast.tsx` have always carried.
+
+---
+
 ## Verification gate for every phase
 
 No phase is `done` until all four pass:
@@ -450,22 +851,87 @@ claims were met and they are tedious to reconstruct later:
 
 ---
 
+## Plan complete - what the eight phases delivered
+
+The app was document-expiry-first: `ClientDocument.expiryDate` drove everything
+and periodic filings were a hardcoded array that never changed and never saved.
+It is now year-based UAE tax compliance, with the document side intact.
+
+| Then | Now |
+|---|---|
+| `complianceDeadlines` - a fake array, excluded from `PersistedState` | `Registration` -> generated `FilingPeriod[]`, persisted, regenerable without touching filed history |
+| Quarterly assumed to be calendar Q1-Q4 | Three FTA stagger groups, stub first periods, leap-year clamps - both sample certificates reproduced exactly |
+| Onboarding asked "what business type is this" | Onboarding asks "what are we handling, for which year", and produces a two-year calendar from 3 inputs per registration |
+| No filings view | `/filings` worklist grouped by urgency; per-client Compliance tab; tax years that close and reopen with an audit trail |
+| Reminders watched documents only | One engine over filings and documents, with per-obligation milestones and a send log |
+| A due return and a billable matter were unconnected | filing -> matter -> completed matter -> invoice, linked both ways, duplicate-guarded |
+| Adding an obligation meant a code change | Settings -> Compliance: add, edit, delete, with registrations rescheduled and filed history protected |
+
+### Both open decisions the client left are now settings, not assumptions
+
+- **Reopening a closed year** (decision #1) - confirm + typed reason + audit
+  entry, with the prompt behind a Settings toggle. The audit entry is not
+  optional and has no toggle.
+- **VAT due date, 28th vs last day** (decision #2) - the ambiguity the plan
+  flagged is resolved by making it editable per obligation *and* overridable per
+  registration. Phase 8 verified switching `VAT Return` to the statutory 28th
+  moves 3 pending periods and leaves 87 filed ones untouched.
+
+### The follow-on plan the phase file asked for is not needed
+
+`PHASE-08` closes by asking for a follow-on plan covering **penalty fees** and
+the **credit-note historical fee/VAT snapshot** rule from
+`SanumaBusinessFundamentalBn.md` §5. Both arrived in parallel work that merged
+into this branch, and both are built:
+
+| §5 requirement | Where it lives |
+|---|---|
+| Minimum fee when the firm must act without the client | `PenaltyFeeRule` + `PendingCharge`, raised in `addMatter` |
+| Charge queues and lands on the next invoice automatically | `pendingChargesForClient` -> `NewInvoiceModal` -> `addInvoice` |
+| Waivable with a typed reason | `WaiveChargeModal`, `waivePendingCharge` |
+| Fee and VAT rate frozen at creation | `PendingCharge.amount` / `.vatApplicable` snapshotted, with the reasoning in the type's doc comment |
+| Credit note, never editing an issued invoice | `CreditNote` with its own `amount` / `vatAmount` at issue time |
+
+Writing a plan for this would be planning work that already exists. Phase 7
+verified the queue end to end (an AED 250 seeded charge riding onto
+`INV-2026-1008` alongside a `750 + 5% VAT` service line, each with its own VAT
+treatment), and corrected one real bug in it along the way: the fee was firing on
+every *scheduled* return, which §5 does not ask for.
+
+**What is genuinely still open** is smaller and different:
+
+1. **No test runner.** Phase 1's 27 golden certificate cases and Phase 7's and
+   Phase 8's chain assertions all lived in scratch scripts that were deleted.
+   `vitest` is one dev dependency and would make them a permanent gate. It is a
+   dependency decision, so it has not been taken unilaterally - and it is the
+   single highest-value thing left.
+2. **`Client.trn` duplicates `Registration.registrationNumber`.** Raised in
+   Phase 5 and still true: a client with VAT and Corporate Tax has two real TRNs
+   that one client-level field cannot express, and the profile header can
+   disagree with the registration cards below it.
+3. **The seed's frozen `TODAY` still anchors picker defaults** - the tax-year
+   selects and `currentTaxYear()`. Deliberate, so the demo opens on a year that
+   has data, but it will need a decision before real use. Every *record* the
+   store writes now uses the real clock.
+
+---
+
 ## Blocked on / awaiting client input
 
-Nothing blocking. Every open decision in `PLAN.md` has a recommended default,
-so Phase 1 can start immediately.
+Nothing blocking, and nothing left to block: all eight phases are done.
 
-Two decisions should be **confirmed with the client before their phase lands**,
-since these are the ones the client explicitly left open:
+Both decisions the client explicitly left open were shipped as **settings**
+rather than baked-in assumptions, so neither needs an answer before the work is
+usable - but both are worth confirming, because the defaults are guesses:
 
-| Decision | Needed before | Recommended default |
+| Decision | Default shipped | Where the client changes it |
 |---|---|---|
-| Reopen a closed tax year — confirmation or not? | Phase 5 | With confirmation + typed reason + audit entry, as a Settings toggle |
-| VAT due date — 28th or last day of the following month? | Phase 1 | Read from certificate; default last-day; per-registration override |
+| Reopen a closed tax year - prompt for a reason? | on | Settings -> Compliance -> Tax Year Controls |
+| VAT due date - 28th, or last day of the following month? | last day | Settings -> Compliance -> edit `VAT Return`; also overridable per registration |
 
-The second one only affects a default value, so Phase 1 is not blocked on it —
-but getting it wrong quietly shifts every VAT due date in the system by two
-days, so it is worth asking rather than assuming.
+The VAT one still matters: getting it wrong shifts every VAT due date in the
+system by two days. It is now a two-click fix rather than a code change, so the
+question is worth asking rather than assuming - but it is no longer a risk.
 
 ---
 

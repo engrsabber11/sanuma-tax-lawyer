@@ -7,6 +7,7 @@ import { Avatar } from '../../components/ui/Avatar'
 import { Tabs } from '../../components/ui/Tabs'
 import { Switch } from '../../components/ui/Switch'
 import { Input } from '../../components/ui/Field'
+import { Pagination } from '../../components/ui/Pagination'
 import { useData } from '../../data/store'
 import { formatAED, cn } from '../../lib/utils'
 import type { ReferralBonusRule } from '../../data/types'
@@ -14,6 +15,8 @@ import type { ReferralBonusRule } from '../../data/types'
 export function ReferralsPage() {
   const { clients, referralBonusRules: rules, walletTransactions, updateReferralBonusRule } = useData()
   const [tab, setTab] = useState('rules')
+  const [walletPage, setWalletPage] = useState(1)
+  const [walletPageSize, setWalletPageSize] = useState(10)
 
   const wallets = useMemo(
     () =>
@@ -111,7 +114,7 @@ export function ReferralsPage() {
                 </tr>
               </thead>
               <tbody>
-                {wallets.map(({ client, balance, referralCount, directCount, subCount, earned }) => (
+                {wallets.slice((walletPage - 1) * walletPageSize, walletPage * walletPageSize).map(({ client, balance, referralCount, directCount, subCount, earned }) => (
                   <tr key={client.id} className="border-b border-ink-50 last:border-0 dark:border-ink-800/60">
                     <td className="px-5 py-3.5">
                       <Link to={`/clients/${client.id}?tab=wallet`} className="flex items-center gap-2.5 hover:text-accent-600">
@@ -136,6 +139,14 @@ export function ReferralsPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={walletPage}
+            pageSize={walletPageSize}
+            totalItems={wallets.length}
+            onPageChange={setWalletPage}
+            onPageSizeChange={setWalletPageSize}
+            itemLabel="wallets"
+          />
         </Card>
       )}
 

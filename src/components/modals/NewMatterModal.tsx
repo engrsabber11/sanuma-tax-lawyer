@@ -1,26 +1,35 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Building2, UserCheck } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarClock, UserCheck } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input, Label, Select, ErrorText, invalidFieldClass } from '../ui/Field'
 import { useData } from '../../data/store'
+import { matterDefaultsForFiling } from '../../data/filingPeriods'
 import { flattenServices, serviceLabel } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
-import { cn, formatAED, sleep } from '../../lib/utils'
+import { cn, formatAED, formatDate, sleep } from '../../lib/utils'
 import type { Matter } from '../../data/types'
 
 export function NewMatterModal({
   open,
   onClose,
   defaultClientId,
+  filingPeriodId,
   onCreated,
 }: {
   open: boolean
   onClose: () => void
   defaultClientId?: string
+  /**
+   * Set when the matter is being opened to file a period. Client, service, title
+   * and due date arrive pre-filled and submit routes through
+   * `openMatterForFiling` so the two records are linked. Absent, the modal
+   * behaves exactly as the standalone "New Matter" path always has.
+   */
+  filingPeriodId?: string
   onCreated?: (matter: Matter) => void
 }) {
-  const { clients, services, addMatter, penaltyFeeRule } = useData()
+  const { clients, services, obligationTypes, filingPeriods, addMatter, openMatterForFiling, penaltyFeeRule } = useData()
   const { show } = useToast()
   const [clientId, setClientId] = useState('')
   const [title, setTitle] = useState('')
@@ -31,16 +40,27 @@ export function NewMatterModal({
   const [showErrors, setShowErrors] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  const period = filingPeriodId ? filingPeriods.find((p) => p.id === filingPeriodId) : undefined
+  const obligation = period ? obligationTypes.find((t) => t.id === period.obligationTypeId) : undefined
+  const filingDefaults = period ? matterDefaultsForFiling(period, obligation) : undefined
+
   useEffect(() => {
     if (open) {
-      setClientId(defaultClientId ?? clients[0]?.id ?? '')
-      setTitle('')
-      setServiceId(services[0]?.id ?? '')
-      setDueDate('')
-      setClientInitiated(false)
+      setClientId(period?.clientId ?? defaultClientId ?? clients[0]?.id ?? '')
+      setTitle(filingDefaults?.title ?? '')
+      // A filing whose obligation has no service falls back to the picker rather
+      // than to an arbitrary first entry — the lawyer chooses what it bills as.
+      setServiceId(
+        filingDefaults?.serviceId && services.some((s) => s.id === filingDefaults.serviceId)
+          ? filingDefaults.serviceId
+          : (services[0]?.id ?? ''),
+      )
+      setDueDate(filingDefaults?.dueDate ?? '')
+      // Scheduled compliance work carries no penalty fee — see openMatterForFiling.
+      setClientInitiated(!!period)
       setShowErrors(false)
     }
-  }, [open, defaultClientId])
+  }, [open, defaultClientId, filingPeriodId])
 
   const titleError = !title.trim() ? 'Matter title is required' : null
   const penaltyApplies = penaltyFeeRule.enabled && penaltyFeeRule.amount > 0
@@ -54,7 +74,14 @@ export function NewMatterModal({
     }
     setSubmitting(true)
     await sleep(400 + Math.random() * 200)
-    const created = addMatter({ clientId, title, serviceId, dueDate: dueDate || undefined, clientInitiated })
+    const created = filingPeriodId
+      ? openMatterForFiling(filingPeriodId, { title, serviceId, dueDate: dueDate || undefined, clientInitiated })
+      : addMatter({ clientId, title, serviceId, dueDate: dueDate || undefined, clientInitiated })
+    if (!created) {
+      show('That filing could not be opened as a matter — pick a service it bills against.')
+      setSubmitting(false)
+      return
+    }
     show(willCharge ? `Matter created — ${formatAED(penaltyFeeRule.amount)} penalty fee queued for ${clientName}` : `Matter "${created.title}" created`)
     onCreated?.(created)
     setSubmitting(false)
@@ -65,7 +92,7 @@ export function NewMatterModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="New Matter"
+      title={period ? 'Open Matter for Filing' : 'New Matter'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>
@@ -78,9 +105,28 @@ export function NewMatterModal({
       }
     >
       <div className="flex flex-col gap-4">
+        {period && (
+          <div className="flex items-start gap-2.5 rounded-lg bg-accent-50 px-3.5 py-3 text-xs dark:bg-accent-900/20">
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-accent-600 dark:text-accent-400" />
+            <div>
+              <p className="font-medium text-ink-800 dark:text-ink-100">
+                Files {obligation?.name ?? 'filing'} — {period.label}
+              </p>
+              <p className="mt-0.5 text-ink-500 dark:text-ink-400">
+                Period {formatDate(period.periodStart)} – {formatDate(period.periodEnd)} · due{' '}
+                {formatDate(period.dueDate)}
+              </p>
+            </div>
+          </div>
+        )}
         <div>
           <Label>Client</Label>
-          <Select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          <Select
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            disabled={!!period}
+            className={cn(period && 'cursor-not-allowed opacity-60')}
+          >
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -88,6 +134,9 @@ export function NewMatterModal({
               </option>
             ))}
           </Select>
+          {period && (
+            <p className="mt-1 text-xs text-ink-400">Set by the filing this matter belongs to.</p>
+          )}
         </div>
         <div>
           <Label>Matter Title</Label>
@@ -117,6 +166,12 @@ export function NewMatterModal({
         {penaltyApplies && (
           <div>
             <Label>Who opened this matter?</Label>
+            {period && (
+              <p className="-mt-0.5 mb-2 text-xs text-ink-500 dark:text-ink-400">
+                This return is on the client's own schedule, so no fee applies. Switch it only if the client's delay is
+                what forced the firm to open it.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"

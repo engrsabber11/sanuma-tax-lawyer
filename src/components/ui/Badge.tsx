@@ -2,7 +2,7 @@ import type { HTMLAttributes } from 'react'
 import { cn } from '../../lib/utils'
 import type { Urgency } from '../../lib/utils'
 
-type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
+type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'critical'
 
 const tones: Record<Tone, string> = {
   neutral: 'bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-300',
@@ -10,6 +10,9 @@ const tones: Record<Tone, string> = {
   success: 'bg-success-100 text-success-700 dark:bg-success-500/15 dark:text-success-500',
   warning: 'bg-warning-100 text-warning-700 dark:bg-warning-500/15 dark:text-warning-500',
   danger: 'bg-danger-100 text-danger-700 dark:bg-danger-500/15 dark:text-danger-500',
+  // Filled rather than tinted: at a glance it has to separate from `danger`
+  // sitting directly above it in the same list.
+  critical: 'bg-danger-600 text-white ring-1 ring-danger-700/40 dark:bg-danger-600 dark:text-white',
 }
 
 const sizes = {
@@ -40,14 +43,20 @@ export function Badge({ tone = 'neutral', dot, size = 'md', className, children,
         'bg-success-500': tone === 'success',
         'bg-warning-500': tone === 'warning',
         'bg-danger-500': tone === 'danger',
+        'bg-white': tone === 'critical',
       })} />}
       {children}
     </span>
   )
 }
 
-const urgencyTone: Record<Urgency, Tone> = { ok: 'success', warning: 'warning', danger: 'danger' }
-const urgencyLabel: Record<Urgency, string> = { ok: 'Valid', warning: 'Expiring soon', danger: 'Expired' }
+const urgencyTone: Record<Urgency, Tone> = { ok: 'success', warning: 'warning', danger: 'danger', critical: 'critical' }
+const urgencyLabel: Record<Urgency, string> = {
+  ok: 'Valid',
+  warning: 'Expiring soon',
+  danger: 'Expired',
+  critical: 'Long overdue',
+}
 
 export function UrgencyBadge({ urgency, label }: { urgency: Urgency; label?: string }) {
   return (

@@ -1,6 +1,6 @@
 # Phase 7 — Filing → Matter → Invoice Chain
 
-**Status:** pending · **Depends on:** Phase 1, 2, 4 · **UI changes:** modal + matter detail
+**Status:** done · **Depends on:** Phase 1, 2, 4 · **UI changes:** modal + matter detail
 
 Wiring, not new machinery. Matters, checklists, services and invoices all
 already exist and work; this phase connects them to the filing spine so a due

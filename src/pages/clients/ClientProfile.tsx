@@ -13,16 +13,19 @@ import {
   Receipt,
   Users2,
   AlertTriangle,
+  Eye,
 } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge, UrgencyBadge } from '../../components/ui/Badge'
 import { Avatar } from '../../components/ui/Avatar'
 import { Tabs } from '../../components/ui/Tabs'
 import { ClientComplianceTab } from '../../components/compliance/ClientComplianceTab'
+import { ClientTimelineTab } from '../../components/clients/ClientTimelineTab'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { EditClientModal } from '../../components/modals/EditClientModal'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
+import { DocumentPreviewModal } from '../../components/modals/DocumentPreviewModal'
 import { WalletActionModal } from '../../components/modals/WalletActionModal'
 import { useData } from '../../data/store'
 import { serviceLabel } from '../../data/serviceTree'
@@ -41,6 +44,7 @@ export function ClientProfile() {
   )
   const [editOpen, setEditOpen] = useState(false)
   const [newMatterOpen, setNewMatterOpen] = useState(false)
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null)
   const [walletModal, setWalletModal] = useState<'withdraw' | 'apply' | null>(null)
 
   const docs = clientDocuments.filter((d) => d.clientId === id)
@@ -174,6 +178,7 @@ export function ClientProfile() {
         tabs={[
           { id: 'overview', label: 'Overview' },
           { id: 'compliance', label: 'Compliance', count: clientRegistrations.length || undefined },
+          { id: 'timeline', label: 'Activity Timeline' },
           { id: 'documents', label: 'Documents', count: docs.length },
           { id: 'matters', label: 'Matters', count: clientMatters.length },
           { id: 'invoices', label: 'Invoices', count: clientInvoices.length },
@@ -225,6 +230,7 @@ export function ClientProfile() {
       )}
 
       {tab === 'compliance' && client && <ClientComplianceTab clientId={client.id} clientName={client.name} />}
+      {tab === 'timeline' && client && <ClientTimelineTab clientId={client.id} clientName={client.name} />}
 
       {tab === 'documents' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -248,7 +254,16 @@ export function ClientProfile() {
                         </Link>
                       )}
                     </div>
-                    <UrgencyBadge urgency={urgencyFromDate(d.expiryDate)} />
+                    <div className="flex items-center gap-2">
+                      <UrgencyBadge urgency={urgencyFromDate(d.expiryDate)} />
+                      <button
+                        onClick={() => setPreviewDoc(d)}
+                        className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-accent-600 dark:hover:bg-ink-700"
+                        title="Preview official document"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -270,10 +285,30 @@ export function ClientProfile() {
                   </div>
                   <Badge
                     tone={
-                      d.state === 'filed' ? 'success' : d.state === 'not-required' ? 'neutral' : d.urgency === 'danger' ? 'danger' : d.urgency === 'warning' ? 'warning' : 'neutral'
+                      d.state === 'filed'
+                        ? 'success'
+                        : d.state === 'not-required'
+                          ? 'neutral'
+                          : d.urgency === 'critical'
+                            ? 'critical'
+                            : d.urgency === 'danger'
+                              ? 'danger'
+                              : d.urgency === 'warning'
+                                ? 'warning'
+                                : 'neutral'
                     }
                   >
-                    {d.state === 'filed' ? 'filed' : d.state === 'not-required' ? 'n/a' : d.urgency === 'danger' ? 'overdue' : d.urgency === 'warning' ? 'due soon' : 'upcoming'}
+                    {d.state === 'filed'
+                      ? 'filed'
+                      : d.state === 'not-required'
+                        ? 'n/a'
+                        : d.urgency === 'critical'
+                          ? 'long overdue'
+                          : d.urgency === 'danger'
+                            ? 'overdue'
+                            : d.urgency === 'warning'
+                              ? 'due soon'
+                              : 'upcoming'}
                   </Badge>
                 </div>
               ))}
@@ -451,6 +486,7 @@ export function ClientProfile() {
         defaultClientId={client.id}
         onCreated={(m) => navigate(`/matters/${m.id}`)}
       />
+      <DocumentPreviewModal open={!!previewDoc} onClose={() => setPreviewDoc(null)} document={previewDoc} />
       {walletModal && (
         <WalletActionModal clientId={client.id} balance={walletBalance} mode={walletModal} open={!!walletModal} onClose={() => setWalletModal(null)} />
       )}

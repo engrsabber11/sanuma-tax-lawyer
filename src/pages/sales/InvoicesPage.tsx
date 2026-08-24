@@ -8,12 +8,12 @@ import { Tabs } from '../../components/ui/Tabs'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { NewQuoteModal } from '../../components/modals/NewQuoteModal'
 import { NewInvoiceModal } from '../../components/modals/NewInvoiceModal'
+import { Pagination } from '../../components/ui/Pagination'
 import { useData } from '../../data/store'
 import { useToast } from '../../lib/toast'
 import { formatAED, formatDate } from '../../lib/utils'
 import { invoiceTotal } from '../../lib/invoice'
 import type { Invoice, Quote } from '../../data/types'
-
 
 const quoteStatusTone: Record<Quote['status'], 'neutral' | 'accent' | 'success' | 'danger'> = {
   draft: 'neutral',
@@ -37,6 +37,10 @@ export function InvoicesPage({ initialTab }: { initialTab: 'quotes' | 'invoices'
   const [newQuoteOpen, setNewQuoteOpen] = useState(false)
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
   const [converted, setConverted] = useState<Set<string>>(new Set())
+  const [quotesPage, setQuotesPage] = useState(1)
+  const [quotesPageSize, setQuotesPageSize] = useState(10)
+  const [invoicesPage, setInvoicesPage] = useState(1)
+  const [invoicesPageSize, setInvoicesPageSize] = useState(10)
 
   function handleConvert(quoteId: string) {
     const invoice = convertQuoteToInvoice(quoteId)
@@ -85,14 +89,15 @@ export function InvoicesPage({ initialTab }: { initialTab: 'quotes' | 'invoices'
                   </tr>
                 </thead>
                 <tbody>
-                  {quotes.map((q) => {
+                  {quotes.slice((quotesPage - 1) * quotesPageSize, quotesPage * quotesPageSize).map((q) => {
                     const client = clients.find((c) => c.id === q.clientId)
                     return (
                       <tr key={q.id} className="border-b border-ink-50 last:border-0 dark:border-ink-800/60">
                         <td className="px-5 py-3.5">
                           <Link to={`/clients/${client?.id}`} className="font-medium text-ink-800 hover:text-accent-600 dark:text-ink-100">
-                            {client?.name}
+                            {client?.businessName || client?.name}
                           </Link>
+                          {client?.businessName && <p className="text-xs text-ink-400">{client.name}</p>}
                         </td>
                         <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">
                           {q.serviceIds.map((id) => services.find((s) => s.id === id)?.name).join(', ')}
@@ -115,6 +120,14 @@ export function InvoicesPage({ initialTab }: { initialTab: 'quotes' | 'invoices'
                 </tbody>
               </table>
             </div>
+            <Pagination
+              page={quotesPage}
+              pageSize={quotesPageSize}
+              totalItems={quotes.length}
+              onPageChange={setQuotesPage}
+              onPageSizeChange={setQuotesPageSize}
+              itemLabel="quotes"
+            />
           </Card>
         )
       ) : invoices.length === 0 ? (
@@ -133,7 +146,7 @@ export function InvoicesPage({ initialTab }: { initialTab: 'quotes' | 'invoices'
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => {
+                {invoices.slice((invoicesPage - 1) * invoicesPageSize, invoicesPage * invoicesPageSize).map((inv) => {
                   const client = clients.find((c) => c.id === inv.clientId)
                   return (
                     <tr
@@ -146,7 +159,10 @@ export function InvoicesPage({ initialTab }: { initialTab: 'quotes' | 'invoices'
                           {inv.number}
                         </Link>
                       </td>
-                      <td className="px-5 py-3.5 text-ink-600 dark:text-ink-300">{client?.name}</td>
+                      <td className="px-5 py-3.5">
+                        <span className="font-medium text-ink-800 dark:text-ink-100">{client?.businessName || client?.name}</span>
+                        {client?.businessName && <p className="text-xs text-ink-400">{client.name}</p>}
+                      </td>
                       <td className="px-5 py-3.5 font-medium text-ink-700 dark:text-ink-200">{formatAED(invoiceTotal(inv))}</td>
                       <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">{formatDate(inv.dueDate)}</td>
                       <td className="px-5 py-3.5">
@@ -158,6 +174,14 @@ export function InvoicesPage({ initialTab }: { initialTab: 'quotes' | 'invoices'
               </tbody>
             </table>
           </div>
+          <Pagination
+            page={invoicesPage}
+            pageSize={invoicesPageSize}
+            totalItems={invoices.length}
+            onPageChange={setInvoicesPage}
+            onPageSizeChange={setInvoicesPageSize}
+            itemLabel="invoices"
+          />
         </Card>
       )}
 

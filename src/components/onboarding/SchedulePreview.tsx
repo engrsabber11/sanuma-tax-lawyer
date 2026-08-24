@@ -127,6 +127,7 @@ function FilingStateBadge({ period }: { period: FilingPeriod }) {
   if (period.state === 'filed') return <Badge tone="success">filed</Badge>
   if (period.state === 'not-required') return <Badge tone="neutral">n/a</Badge>
   const urgency = urgencyFromDate(period.dueDate)
+  if (urgency === 'critical') return <Badge tone="critical">long overdue</Badge>
   if (urgency === 'danger') return <Badge tone="danger">overdue</Badge>
   if (urgency === 'warning') return <Badge tone="warning">due soon</Badge>
   return <Badge tone="neutral">upcoming</Badge>

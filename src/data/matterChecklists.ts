@@ -39,6 +39,14 @@ const TEMPLATES: Record<string, string[]> = {
     'Confirm payment',
   ],
   'svc-credit-note': ['Identify the original tax invoice', 'Draft the credit note', 'Client review', 'Issue the credit note'],
+  'svc-excise-return': [
+    'Collect stock movement and production records for the month',
+    'Reconcile excise goods released for consumption',
+    'Prepare excise return draft',
+    'Client review & approval',
+    'Submit return on EmaraTax',
+    'Confirm payment',
+  ],
   'svc-esr-report': [
     'Determine the relevant activity',
     'Prepare ESR notification',

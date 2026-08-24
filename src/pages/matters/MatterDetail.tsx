@@ -1,15 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { AlertTriangle, ArrowLeft, Briefcase, Check, FileText, Link2, Plus, Receipt, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Briefcase,
+  CalendarClock,
+  Check,
+  CircleSlash,
+  FileText,
+  Link2,
+  Plus,
+  Receipt,
+  X,
+} from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Badge, UrgencyBadge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Avatar } from '../../components/ui/Avatar'
 import { Input, Textarea } from '../../components/ui/Field'
+import { Modal } from '../../components/ui/Modal'
 import { NewInvoiceModal } from '../../components/modals/NewInvoiceModal'
 import { NewDocumentModal } from '../../components/modals/NewDocumentModal'
 import { LinkDocumentModal } from '../../components/modals/LinkDocumentModal'
 import { useData } from '../../data/store'
+import { effectivePrice } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
 import type { MatterStatus } from '../../data/types'
 import { cn, formatAED, formatDate, urgencyFromDate } from '../../lib/utils'
@@ -35,11 +49,14 @@ export function MatterDetail() {
     invoices,
     clientDocuments,
     documentTypes,
+    obligationTypes,
+    filingPeriods,
     updateMatter,
     toggleMatterChecklistItem,
     addMatterChecklistItem,
     removeMatterChecklistItem,
     unlinkDocumentFromMatter,
+    markFilingFiled,
     pendingCharges,
   } = useData()
   const { show } = useToast()
@@ -49,6 +66,11 @@ export function MatterDetail() {
   const [addDocOpen, setAddDocOpen] = useState(false)
   const [linkDocOpen, setLinkDocOpen] = useState(false)
   const [waiveOpen, setWaiveOpen] = useState(false)
+  const [followUpOpen, setFollowUpOpen] = useState(false)
+  // The follow-up choices live here rather than inside the modal so they can be
+  // seeded by the event that opens it — no reset-on-open effect.
+  const [followUpMarkFiled, setFollowUpMarkFiled] = useState(false)
+  const [followUpInvoice, setFollowUpInvoice] = useState(false)
   const [newStep, setNewStep] = useState('')
 
   useEffect(() => {
@@ -73,10 +95,35 @@ export function MatterDetail() {
   const currentIndex = STATUS_FLOW.indexOf(matter.status)
   const doneCount = matter.checklist.filter((c) => c.done).length
 
+  // The reverse half of the filing → matter link, so a matter opened cold says
+  // which return it belongs to.
+  const filing = filingPeriods.find((p) => p.matterId === matter.id)
+  const filingObligation = filing ? obligationTypes.find((t) => t.id === filing.obligationTypeId) : undefined
+  // Nothing left to offer once the filing is settled and billed. A period marked
+  // not-required is settled too — only an unbilled one still has a follow-up.
+  const followUpsOutstanding = !!filing && (filing.state === 'pending' || !invoice)
+
   function submitNewStep() {
     if (!newStep.trim()) return
     addMatterChecklistItem(matter!.id, newStep.trim())
     setNewStep('')
+  }
+
+  /**
+   * Status changes go through here so completing a matter can OFFER the two
+   * follow-ups. It never performs them: a matter can be completed because it was
+   * abandoned or handled elsewhere, and silently telling the FTA-facing record a
+   * return was filed is the one mistake in this chain nobody can walk back.
+   */
+  function setStatus(status: MatterStatus) {
+    updateMatter(matter!.id, { status })
+    if (status === 'completed' && followUpsOutstanding) {
+      // Ticked by default: a completed return matter almost always means the
+      // return went in. The invoice is not — billing is a separate decision.
+      setFollowUpMarkFiled(filing?.state === 'pending')
+      setFollowUpInvoice(false)
+      setFollowUpOpen(true)
+    }
   }
 
   return (
@@ -125,7 +172,7 @@ export function MatterDetail() {
           {STATUS_FLOW.map((s, i) => (
             <div key={s} className="flex flex-1 items-center last:flex-none">
               <button
-                onClick={() => updateMatter(matter.id, { status: s })}
+                onClick={() => setStatus(s)}
                 className={`flex flex-col items-center gap-2 rounded-lg px-2 py-1 transition-opacity ${i > currentIndex ? 'opacity-40' : ''}`}
               >
                 <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${i <= currentIndex ? 'bg-accent-600 text-white' : 'bg-ink-100 text-ink-400 dark:bg-ink-800'}`}>
@@ -140,12 +187,12 @@ export function MatterDetail() {
 
         <div className="mt-4 flex justify-end gap-2">
           {currentIndex > 0 && (
-            <Button variant="secondary" size="sm" onClick={() => updateMatter(matter.id, { status: STATUS_FLOW[currentIndex - 1] })}>
+            <Button variant="secondary" size="sm" onClick={() => setStatus(STATUS_FLOW[currentIndex - 1])}>
               Move Back
             </Button>
           )}
           {currentIndex < STATUS_FLOW.length - 1 && (
-            <Button size="sm" onClick={() => updateMatter(matter.id, { status: STATUS_FLOW[currentIndex + 1] })}>
+            <Button size="sm" onClick={() => setStatus(STATUS_FLOW[currentIndex + 1])}>
               Advance to {STATUS_LABEL[STATUS_FLOW[currentIndex + 1]]}
             </Button>
           )}
@@ -197,6 +244,49 @@ export function MatterDetail() {
           </CardBody>
         </Card>
       </div>
+
+      {filing && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Filing</CardTitle>
+            <Badge tone={filing.state === 'filed' ? 'success' : filing.state === 'not-required' ? 'neutral' : 'warning'}>
+              {filing.state === 'filed' ? 'Filed' : filing.state === 'not-required' ? 'Not required' : 'Outstanding'}
+            </Badge>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-ink-800 dark:text-ink-100">
+                <CalendarClock className="mr-1.5 inline h-3.5 w-3.5 text-ink-400" />
+                {filingObligation?.name ?? 'Filing'} — {filing.label}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">
+                Period {formatDate(filing.periodStart)} – {formatDate(filing.periodEnd)} · due{' '}
+                {formatDate(filing.dueDate)}
+                {filing.state === 'filed' && filing.filedAt && <> · filed {formatDate(filing.filedAt)}</>}
+              </p>
+              <Link
+                to={`/clients/${filing.clientId}?tab=compliance`}
+                className="mt-1 inline-block text-xs font-medium text-accent-600 hover:underline"
+              >
+                {client?.businessName ?? client?.name ?? 'Client'} · tax year {filing.taxYear}
+              </Link>
+            </div>
+            {filing.state === 'pending' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<Check className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  markFilingFiled(filing.id)
+                  show(`${filing.label} marked filed`)
+                }}
+              >
+                Mark Filed
+              </Button>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       {penaltyCharge && (
         <Card>
@@ -322,11 +412,178 @@ export function MatterDetail() {
         onClose={() => setInvoiceModalOpen(false)}
         defaultClientId={matter.clientId}
         defaultMatterId={matter.id}
+        defaultServiceIds={service ? [service.id] : undefined}
         onCreated={(inv) => updateMatter(matter.id, { invoiceId: inv.id })}
       />
+      {filing && (
+        <CompletionFollowUpModal
+          open={followUpOpen}
+          onClose={() => setFollowUpOpen(false)}
+          filingLabel={`${filingObligation?.name ?? 'Filing'} — ${filing.label}`}
+          filingDue={filing.dueDate}
+          filingPending={filing.state === 'pending'}
+          servicePrice={service ? effectivePrice(service, services) : undefined}
+          serviceName={service?.name}
+          invoiceExists={!!invoice}
+          markFiled={followUpMarkFiled}
+          createInvoice={followUpInvoice}
+          onToggleMarkFiled={() => setFollowUpMarkFiled((v) => !v)}
+          onToggleCreateInvoice={() => setFollowUpInvoice((v) => !v)}
+          onApply={() => {
+            if (followUpMarkFiled && filing.state === 'pending') {
+              markFilingFiled(filing.id)
+              show(`${filing.label} marked filed`)
+            }
+            setFollowUpOpen(false)
+            if (followUpInvoice && !invoice) setInvoiceModalOpen(true)
+          }}
+        />
+      )}
       <NewDocumentModal open={addDocOpen} onClose={() => setAddDocOpen(false)} defaultClientId={matter.clientId} defaultMatterId={matter.id} />
       <LinkDocumentModal open={linkDocOpen} onClose={() => setLinkDocOpen(false)} clientId={matter.clientId} matterId={matter.id} />
       <WaiveChargeModal open={waiveOpen} onClose={() => setWaiveOpen(false)} charge={penaltyCharge} />
     </div>
+  )
+}
+
+/**
+ * Offered when a matter that files a period is completed.
+ *
+ * Both follow-ups are opt-in-with-a-default rather than automatic. Marking the
+ * filing is ticked by default because a completed return matter almost always
+ * means the return went in; skipping leaves the filing exactly as it was.
+ */
+function CompletionFollowUpModal({
+  open,
+  onClose,
+  filingLabel,
+  filingDue,
+  filingPending,
+  serviceName,
+  servicePrice,
+  invoiceExists,
+  markFiled,
+  createInvoice,
+  onToggleMarkFiled,
+  onToggleCreateInvoice,
+  onApply,
+}: {
+  open: boolean
+  onClose: () => void
+  filingLabel: string
+  filingDue: string
+  filingPending: boolean
+  serviceName?: string
+  servicePrice?: number
+  invoiceExists: boolean
+  markFiled: boolean
+  createInvoice: boolean
+  onToggleMarkFiled: () => void
+  onToggleCreateInvoice: () => void
+  onApply: () => void
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Matter completed"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Skip for now
+          </Button>
+          <Button
+            onClick={onApply}
+            disabled={!(markFiled && filingPending) && !(createInvoice && !invoiceExists)}
+          >
+            Apply
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-ink-600 dark:text-ink-300">
+          This matter files <span className="font-medium text-ink-800 dark:text-ink-100">{filingLabel}</span>, due{' '}
+          {formatDate(filingDue)}. Nothing below happens unless you choose it.
+        </p>
+
+        <FollowUpChoice
+          checked={markFiled && filingPending}
+          disabled={!filingPending}
+          onToggle={onToggleMarkFiled}
+          icon={<Check className="h-4 w-4" />}
+          label="Mark the filing as filed"
+          hint={
+            filingPending
+              ? 'Untick if the return was handled elsewhere or the matter was abandoned.'
+              : 'Already marked filed.'
+          }
+        />
+        <FollowUpChoice
+          checked={createInvoice && !invoiceExists}
+          disabled={invoiceExists}
+          onToggle={onToggleCreateInvoice}
+          icon={<Receipt className="h-4 w-4" />}
+          label="Create the invoice"
+          hint={
+            invoiceExists
+              ? 'This matter is already invoiced.'
+              : serviceName
+                ? `Opens the invoice pre-filled with ${serviceName}${servicePrice !== undefined ? ` — ${formatAED(servicePrice)} + 5% VAT` : ''}.`
+                : 'Opens the invoice pre-filled from this matter.'
+          }
+        />
+      </div>
+    </Modal>
+  )
+}
+
+function FollowUpChoice({
+  checked,
+  disabled,
+  onToggle,
+  icon,
+  label,
+  hint,
+}: {
+  checked: boolean
+  disabled?: boolean
+  onToggle: () => void
+  icon: React.ReactNode
+  label: string
+  hint: string
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onToggle}
+      className={cn(
+        'flex items-start gap-3 rounded-xl border p-3.5 text-left transition-colors',
+        disabled
+          ? 'cursor-not-allowed border-ink-200 opacity-60 dark:border-ink-700'
+          : checked
+            ? 'border-accent-500 bg-accent-50 dark:bg-accent-900/20'
+            : 'border-ink-200 hover:bg-ink-50 dark:border-ink-700 dark:hover:bg-ink-800',
+      )}
+    >
+      <span
+        className={cn(
+          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border',
+          checked ? 'border-accent-600 bg-accent-600 text-white' : 'border-ink-300 dark:border-ink-600',
+        )}
+      >
+        {checked ? <Check className="h-3.5 w-3.5" /> : disabled ? <CircleSlash className="h-3 w-3 text-ink-400" /> : null}
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-ink-800 dark:text-ink-100">
+          <span className="text-ink-400">{icon}</span>
+          {label}
+        </span>
+        <span className="mt-0.5 block text-xs text-ink-500 dark:text-ink-400">{hint}</span>
+      </span>
+    </button>
   )
 }

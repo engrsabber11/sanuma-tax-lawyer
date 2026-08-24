@@ -212,6 +212,73 @@ export interface Expense {
   billed: boolean
 }
 
+/**
+ * Chart of Accounts. See src/data/chartOfAccounts.ts for the built-in chart and
+ * plans/double-entry-ledger/PLAN.md for the numbering scheme.
+ */
+export type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
+
+export interface Account {
+  /** Four digits. The block carries the statement mapping: 1xxx asset, 4xxx revenue. */
+  code: string
+  name: string
+  /**
+   * Immutable once the account has postings. Type decides sign, which statement
+   * the balance lands on, and closing behaviour — changing it retroactively
+   * rewrites history.
+   */
+  type: AccountType
+  /** Reconciles against a sub-ledger. Phase 4 asserts the match. */
+  control?: 'receivables' | 'wallet' | 'disbursements'
+  builtIn: boolean
+  description?: string
+}
+
+/**
+ * One side of one journal entry. Exactly one of debit/credit is non-zero —
+ * `{ debit: 100, credit: 40 }` is a data-entry mistake, not a net 60, and the
+ * balance guard rejects it rather than netting it silently.
+ */
+export interface JournalLine {
+  accountCode: string
+  debit: number
+  credit: number
+}
+
+export type JournalSource =
+  | 'invoice'
+  | 'payment'
+  | 'credit-note'
+  | 'expense'
+  | 'wallet-accrual'
+  | 'wallet-applied'
+  | 'opening'
+  | 'manual'
+
+/**
+ * A journal entry: one business event, recorded as a BALANCED group of lines.
+ *
+ * This replaces `LedgerEntry`, which held a single line with a single account and
+ * therefore could not balance. Day Book, Trial Balance, Bank Book, Cash Book and
+ * the VAT return are all views over these lines — one source, so no two reports
+ * can disagree.
+ */
+export interface JournalEntry {
+  id: string
+  /** The accounting date, which is not necessarily when it was keyed in. */
+  date: string
+  /** Source document number: `INV-2026-1001`, `BILL-RENT-07`. */
+  reference: string
+  narration: string
+  sourceType: JournalSource
+  /** The invoice / expense / wallet transaction this was posted from. */
+  sourceId?: string
+  actor: string
+  lines: JournalLine[]
+  /** Set on a reversal, pointing at the entry it reverses. Never edit; reverse. */
+  reversesEntryId?: string
+}
+
 export interface LedgerEntry {
   id: string
   date: string
@@ -317,6 +384,10 @@ export interface FilingPeriod {
   filedAt?: string
   matterId?: string
   invoiceId?: string
+  ftaReferenceNo?: string
+  taxPayableOrRefund?: number
+  submissionReceiptName?: string
+  submittedBy?: string
 }
 
 export interface ClientYear {
@@ -328,19 +399,46 @@ export interface ClientYear {
   reopenReason?: string
 }
 
+export type AuditAction =
+  | 'year-closed'
+  | 'year-reopened'
+  | 'registration-edited'
+  | 'filing-reverted'
+  | 'filing-submitted'
+  | 'document-uploaded'
+  | 'charge-waived'
+  | 'matter-opened'
+  | 'matter-completed'
+
 /**
- * Append-only record of tax-year transitions. Follows the shape of
- * ReminderLogEntry rather than inventing a second log convention.
- *
- * The entry is written whether or not the reopen prompt is enabled: losing the
- * typed reason is a preference, losing the record is a defect.
+ * Append-only record of compliance, tax-year transitions, and filing submissions.
  */
 export interface AuditEntry {
   id: string
   at: string
   actor: string
-  action: 'year-closed' | 'year-reopened' | 'registration-edited' | 'filing-reverted'
+  action: AuditAction
   clientId: string
   subject: string
   note?: string
+}
+
+/**
+ * Who someone is in the firm. Three roles, because there are exactly three
+ * levels of trust the work actually needs — see plans/staff-permissions/PLAN.md.
+ *
+ * `partner` is the OWNER of the practice, not a referral partner. The referral
+ * network in SanumaBusinessFundamentalBn.md §1 is a different kind of party
+ * entirely and is never called a partner in this codebase.
+ */
+export type StaffRole = 'partner' | 'consultant' | 'assistant'
+
+export interface StaffUser {
+  id: string
+  name: string
+  title: string
+  /** Sign-in identity. Real data, unlike the demo password beside it. */
+  email: string
+  role: StaffRole
+  avatarColor: string
 }

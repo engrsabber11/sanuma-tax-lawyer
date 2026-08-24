@@ -17,10 +17,11 @@ import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Field'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
+import { FtaSubmissionModal } from '../../components/modals/FtaSubmissionModal'
 import { useData, TODAY } from '../../data/store'
 import { useToast } from '../../lib/toast'
 import type { FilingPeriod } from '../../data/types'
-import { cn, daysUntil, formatDate, urgencyFromDays } from '../../lib/utils'
+import { cn, CRITICAL_AFTER_DAYS_OVERDUE, daysUntil, formatDate, urgencyFromDays } from '../../lib/utils'
 
 /**
  * The lawyer's daily worklist.
@@ -31,9 +32,13 @@ import { cn, daysUntil, formatDate, urgencyFromDays } from '../../lib/utils'
  * thing everywhere in the app.
  */
 
-type GroupId = 'overdue' | 'this-month' | 'next-90' | 'later' | 'filed' | 'not-required'
+type GroupId = 'critical' | 'overdue' | 'this-month' | 'next-90' | 'later' | 'filed' | 'not-required'
 
-const GROUPS: { id: GroupId; label: string; tone: 'danger' | 'warning' | 'neutral' }[] = [
+const GROUPS: { id: GroupId; label: string; tone: 'critical' | 'danger' | 'warning' | 'neutral' }[] = [
+  // Split from Overdue: a return 85 days late and one 24 days late were sorted
+  // next to each other in one red block, which is not a worklist a lawyer can
+  // triage. Past 30 days a second FTA penalty cycle has accrued.
+  { id: 'critical', label: 'Long overdue — penalties accruing', tone: 'critical' },
   { id: 'overdue', label: 'Overdue', tone: 'danger' },
   { id: 'this-month', label: 'Due within 30 days', tone: 'warning' },
   { id: 'next-90', label: 'Next 90 days', tone: 'neutral' },
@@ -52,6 +57,7 @@ function groupFor(p: FilingPeriod): GroupId {
   if (p.state === 'filed') return 'filed'
   if (p.state === 'not-required') return 'not-required'
   const days = daysUntil(p.dueDate)
+  if (days < -CRITICAL_AFTER_DAYS_OVERDUE) return 'critical'
   if (days < 0) return 'overdue'
   if (days <= 30) return 'this-month'
   if (days <= 90) return 'next-90'
@@ -66,7 +72,6 @@ export function FilingsPage() {
     registrations,
     matters,
     invoices,
-    markFilingFiled,
     markFilingNotRequired,
   } = useData()
   const { show } = useToast()
@@ -78,6 +83,7 @@ export function FilingsPage() {
   const [obligationFilter, setObligationFilter] = useState('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [matterFor, setMatterFor] = useState<FilingPeriod | null>(null)
+  const [ftaFilingFor, setFtaFilingFor] = useState<FilingPeriod | null>(null)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ filed: true, 'not-required': true })
 
   // Lookups built once. A practice with 300 clients generates thousands of
@@ -226,7 +232,13 @@ export function FilingsPage() {
                   <span
                     className={cn(
                       'h-2 w-2 shrink-0 rounded-full',
-                      g.tone === 'danger' ? 'bg-danger-500' : g.tone === 'warning' ? 'bg-warning-500' : 'bg-ink-300',
+                      g.tone === 'critical'
+                        ? 'bg-danger-600 ring-2 ring-danger-300 dark:ring-danger-800'
+                        : g.tone === 'danger'
+                          ? 'bg-danger-500'
+                          : g.tone === 'warning'
+                            ? 'bg-warning-500'
+                            : 'bg-ink-300',
                     )}
                   />
                   <span className="text-sm font-semibold text-ink-800 dark:text-ink-100">{g.label}</span>
@@ -250,10 +262,7 @@ export function FilingsPage() {
                         matterTitle={p.matterId ? matterById.get(p.matterId)?.title : undefined}
                         invoiceNumber={p.invoiceId ? invoiceById.get(p.invoiceId)?.number : undefined}
                         onOpenMatter={() => openMatter(p)}
-                        onMarkFiled={() => {
-                          markFilingFiled(p.id)
-                          show(`${obligationById.get(p.obligationTypeId)?.shortName ?? 'Filing'} ${p.label} marked filed`)
-                        }}
+                        onMarkFiled={() => setFtaFilingFor(p)}
                         onMarkNotRequired={() => {
                           markFilingNotRequired(p.id)
                           show(`${p.label} marked not required`)
@@ -272,7 +281,14 @@ export function FilingsPage() {
         open={!!matterFor}
         onClose={() => setMatterFor(null)}
         defaultClientId={matterFor?.clientId}
+        filingPeriodId={matterFor?.id}
         onCreated={(m) => navigate(`/matters/${m.id}`)}
+      />
+
+      <FtaSubmissionModal
+        open={!!ftaFilingFor}
+        onClose={() => setFtaFilingFor(null)}
+        period={ftaFilingFor}
       />
     </div>
   )
@@ -403,17 +419,26 @@ function FilingRow({
             </Badge>
           </Link>
         )}
+        {period.ftaReferenceNo && (
+          <span title={`FTA Reference: ${period.ftaReferenceNo}${period.submittedBy ? ` by ${period.submittedBy}` : ''}`}>
+            <Badge tone="success" size="sm">
+              FTA: {period.ftaReferenceNo}
+            </Badge>
+          </span>
+        )}
       </div>
 
-      <div className="w-32 shrink-0 text-right">
+      <div className="w-36 shrink-0 text-right">
         <p className="text-xs font-medium text-ink-700 dark:text-ink-200">Due {formatDate(period.dueDate)}</p>
         {outstanding ? (
           <p
             className={cn(
               'text-xs',
-              urgency === 'danger'
-                ? 'text-danger-600 dark:text-danger-500'
-                : urgency === 'warning'
+              urgency === 'critical'
+                ? 'font-semibold text-danger-700 dark:text-danger-400'
+                : urgency === 'danger'
+                  ? 'text-danger-600 dark:text-danger-500'
+                  : urgency === 'warning'
                   ? 'text-warning-600 dark:text-warning-500'
                   : 'text-ink-400',
             )}

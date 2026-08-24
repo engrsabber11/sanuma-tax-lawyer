@@ -1,6 +1,8 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from 'recharts'
 import {
+  CalendarClock,
   FolderClock,
   Receipt,
   TrendingUp,
@@ -13,8 +15,9 @@ import { StatCard } from '../components/ui/StatCard'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
 import { Badge, UrgencyBadge } from '../components/ui/Badge'
 import { Avatar } from '../components/ui/Avatar'
-import { useData } from '../data/store'
-import { daysUntil, formatAED, formatDate, urgencyFromDate, urgencyFromDays } from '../lib/utils'
+import { useData, TODAY } from '../data/store'
+import { dueReminders, MILESTONE_LABEL } from '../data/reminders'
+import { cn, daysUntil, formatAED, formatDate, todayIso, urgencyFromDate, urgencyFromDays } from '../lib/utils'
 import { invoiceBalanceDue } from '../lib/invoice'
 
 const revenueTrend = [
@@ -26,9 +29,24 @@ const revenueTrend = [
   { month: 'Jul', revenue: 24750, expense: 16480 },
 ]
 
+/** The seed's revenue month — labelled, not silently implied. See BOOKS_MONTH below. */
+const BOOKS_MONTH = TODAY.slice(0, 7)
+
 export function Dashboard() {
-  const { clients, clientDocuments, obligationTypes, filingPeriods, documentTypes, invoices, expenses, reminderLog } = useData()
+  const {
+    clients,
+    clientDocuments,
+    obligationTypes,
+    filingPeriods,
+    clientYears,
+    documentTypes,
+    reminderRules,
+    reminderLog,
+    invoices,
+    expenses,
+  } = useData()
   const clientById = (id: string) => clients.find((c) => c.id === id)
+  const today = todayIso()
 
   const expiringDocs = clientDocuments
     .map((d) => ({ ...d, days: daysUntil(d.expiryDate), urgency: urgencyFromDate(d.expiryDate) }))
@@ -48,24 +66,74 @@ export function Dashboard() {
     }))
     .sort((a, b) => a.days - b.days)
 
+  // "Where is this year" — the requirement is year-based, so the dashboard has to
+  // answer that, not just list the next few dates.
+  const taxYear = Number(TODAY.slice(0, 4))
+  const inYear = filingPeriods.filter((p) => p.taxYear === taxYear)
+  const yearFiled = inYear.filter((p) => p.state === 'filed').length
+  const yearDue = inYear.filter((p) => p.state === 'pending').length
+  const yearOverdue = inYear.filter((p) => p.state === 'pending' && daysUntil(p.dueDate) < 0).length
+  const yearNotRequired = inYear.filter((p) => p.state === 'not-required').length
+
+  // Reminders the FIRM has to act on. Nothing else in the app surfaces these —
+  // the rules page is organised by rule, not by what lands today.
+  const internalReminders = useMemo(
+    () =>
+      dueReminders({
+        rules: reminderRules,
+        documents: clientDocuments,
+        documentTypes,
+        filingPeriods,
+        obligationTypes,
+        isYearClosed: (clientId, year) =>
+          clientYears.some((y) => y.clientId === clientId && y.taxYear === year && y.status === 'closed'),
+        log: reminderLog,
+        today,
+      }).filter((r) => r.audience === 'internal' || r.audience === 'both'),
+    [reminderRules, clientDocuments, documentTypes, filingPeriods, obligationTypes, clientYears, reminderLog, today],
+  )
+
   const outstandingInvoices = invoices.filter((i) => i.status !== 'paid')
   const outstandingTotal = outstandingInvoices.reduce((sum, i) => sum + invoiceBalanceDue(i), 0)
 
   const monthRevenue = invoices
-    .filter((i) => i.issueDate.startsWith('2026-07'))
+    .filter((i) => i.issueDate.startsWith(BOOKS_MONTH))
     .reduce((sum, i) => sum + i.paidAmount, 0)
-  const monthExpenses = expenses.filter((e) => e.date.startsWith('2026-07')).reduce((sum, e) => sum + e.amount, 0)
+  const monthExpenses = expenses.filter((e) => e.date.startsWith(BOOKS_MONTH)).reduce((sum, e) => sum + e.amount, 0)
+  // Named rather than called "this month": the books are seeded data anchored to
+  // TODAY, and a card headed "this month" showing July's figures in August is a
+  // quiet lie about which period was summed.
+  const booksMonthLabel = new Date(`${BOOKS_MONTH}-01T00:00:00`).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  })
 
-  const newClients = clients.filter((c) => c.createdAt >= '2026-07-01')
-
-  const todaysReminders = reminderLog.filter((r) => r.sentAt.startsWith('2026-07-21'))
+  const newClients = clients.filter((c) => c.createdAt >= `${BOOKS_MONTH}-01`)
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink-900 dark:text-ink-50">Good afternoon 👋</h1>
-        <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Here's what needs your attention today, 21 July 2026.</p>
+        <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
+          Here's what needs your attention today, {formatDate(today)}.
+        </p>
       </div>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-ink-400" />
+            <span className="text-sm font-semibold text-ink-800 dark:text-ink-100">Tax year {taxYear}</span>
+          </div>
+          <YearStat label="Filed" value={yearFiled} tone="success" />
+          <YearStat label="Still due" value={yearDue} tone={yearDue > 0 ? 'accent' : 'neutral'} />
+          <YearStat label="Overdue" value={yearOverdue} tone={yearOverdue > 0 ? 'danger' : 'neutral'} />
+          {yearNotRequired > 0 && <YearStat label="Not required" value={yearNotRequired} tone="neutral" />}
+          <Link to="/filings" className="ml-auto flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline">
+            All filings <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -83,14 +151,14 @@ export function Dashboard() {
           tone="danger"
         />
         <StatCard
-          label="Revenue this month"
+          label={`Revenue — ${booksMonthLabel}`}
           value={formatAED(monthRevenue)}
           icon={<TrendingUp className="h-5 w-5" />}
           trend={`Net ${formatAED(monthRevenue - monthExpenses)} after expenses`}
           tone="success"
         />
         <StatCard
-          label="New Clients this month"
+          label={`New Clients — ${booksMonthLabel}`}
           value={String(newClients.length)}
           icon={<UserPlus className="h-5 w-5" />}
           trend="Via referral & direct signup"
@@ -130,28 +198,31 @@ export function Dashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Today's Reminders</CardTitle>
+            <CardTitle>Needs Chasing Today</CardTitle>
             <Link to="/reminders" className="text-xs font-medium text-accent-600 hover:underline">
               View all
             </Link>
           </CardHeader>
           <CardBody className="flex flex-col gap-3 pt-3">
-            {todaysReminders.length === 0 && <p className="text-sm text-ink-400">Nothing scheduled for today.</p>}
-            {todaysReminders.map((r) => {
+            {/* Derived, never stored: a reminder is due because a date says so. */}
+            {internalReminders.length === 0 && (
+              <p className="text-sm text-ink-400">Nothing falls on a reminder milestone today.</p>
+            )}
+            {internalReminders.slice(0, 6).map((r) => {
               const client = clientById(r.clientId)
               return (
-                <div key={r.id} className="flex items-start gap-3">
+                <div key={r.key} className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-50 text-accent-600 dark:bg-accent-900/30">
                     <BellRing className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink-800 dark:text-ink-100">{r.subject}</p>
                     <p className="text-xs text-ink-400">
-                      {client?.name} · via {r.channel}
+                      {client?.businessName ?? client?.name} · {MILESTONE_LABEL(r.milestone)}
                     </p>
                   </div>
-                  <Badge tone={r.status === 'delivered' ? 'success' : r.status === 'failed' ? 'danger' : 'neutral'}>
-                    {r.status}
+                  <Badge tone={r.alreadySentAt ? 'success' : r.milestone === 0 ? 'danger' : 'warning'}>
+                    {r.alreadySentAt ? 'sent' : r.milestone === 0 ? 'due today' : 'to send'}
                   </Badge>
                 </div>
               )
@@ -165,7 +236,7 @@ export function Dashboard() {
           <CardHeader>
             <CardTitle>Expiring Soon &amp; Overdue Documents</CardTitle>
             <Link to="/documents" className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline">
-              Document Vault <ArrowRight className="h-3 w-3" />
+              Document Renewals <ArrowRight className="h-3 w-3" />
             </Link>
           </CardHeader>
           <CardBody className="flex flex-col gap-1 pt-2">
@@ -194,19 +265,24 @@ export function Dashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Compliance Filing Deadlines</CardTitle>
-            <Link to="/documents" className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline">
-              Calendar view <ArrowRight className="h-3 w-3" />
+            <CardTitle>Upcoming Filings</CardTitle>
+            <Link to="/filings" className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline">
+              Filings worklist <ArrowRight className="h-3 w-3" />
             </Link>
           </CardHeader>
           <CardBody className="flex flex-col gap-1 pt-2">
+            {dueDeadlines.length === 0 && (
+              <p className="px-2 py-2.5 text-sm text-ink-400">Nothing outstanding — every filing is in.</p>
+            )}
+            {/* Rows go to the client's Compliance tab, which is where a filing is
+                actually worked, rather than to the document list. */}
             {dueDeadlines.slice(0, 6).map((d) => {
               const client = clientById(d.clientId)
               const urgency = urgencyFromDays(d.days)
               return (
                 <Link
                   key={d.id}
-                  to={`/clients/${d.clientId}?tab=documents`}
+                  to={`/clients/${d.clientId}?tab=compliance`}
                   className="flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-ink-50 dark:hover:bg-ink-800"
                 >
                   {client && <Avatar name={client.name} color={client.avatarColor} size="sm" />}
@@ -246,6 +322,41 @@ export function Dashboard() {
           ))}
         </CardBody>
       </Card>
+    </div>
+  )
+}
+
+/**
+ * One figure in the tax-year row. Deliberately not a `StatCard`: this row answers
+ * a single question across four numbers, and four cards would read as four
+ * unrelated metrics.
+ */
+function YearStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: 'accent' | 'danger' | 'success' | 'neutral'
+}) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span
+        className={cn(
+          'text-lg font-semibold',
+          tone === 'danger'
+            ? 'text-danger-600 dark:text-danger-500'
+            : tone === 'success'
+              ? 'text-success-600 dark:text-success-500'
+              : tone === 'accent'
+                ? 'text-accent-600 dark:text-accent-400'
+                : 'text-ink-500 dark:text-ink-400',
+        )}
+      >
+        {value}
+      </span>
+      <span className="text-xs text-ink-500 dark:text-ink-400">{label}</span>
     </div>
   )
 }

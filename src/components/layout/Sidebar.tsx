@@ -32,7 +32,7 @@ const nav: { heading: string; items: { to: string; label: string; icon: typeof L
     heading: 'Compliance',
     items: [
       { to: '/filings', label: 'Filings', icon: CalendarClock },
-      { to: '/documents', label: 'Document Vault', icon: FolderClock },
+      { to: '/documents', label: 'Document Renewals', icon: FolderClock },
       { to: '/reminders', label: 'Reminders', icon: BellRing },
     ],
   },

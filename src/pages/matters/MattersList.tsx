@@ -7,6 +7,7 @@ import { Avatar } from '../../components/ui/Avatar'
 import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Field'
 import { NewMatterModal } from '../../components/modals/NewMatterModal'
+import { Pagination } from '../../components/ui/Pagination'
 import { useData } from '../../data/store'
 import { flattenServices, serviceLabel } from '../../data/serviceTree'
 import { useToast } from '../../lib/toast'
@@ -40,12 +41,14 @@ export function MattersList() {
   const [clientFilter, setClientFilter] = useState('all')
   const [serviceFilter, setServiceFilter] = useState('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
-  const [view, setView] = useState<'kanban' | 'list'>('kanban')
+  const [view, setView] = useState<'kanban' | 'list'>('list')
   const [sortKey, setSortKey] = useState<SortKey>('dueDate')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState<MatterStatus>('in-progress')
   const [applyingBulk, setApplyingBulk] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const filteredMatters = useMemo(() => {
     return matters.filter((m) => {
@@ -93,6 +96,11 @@ export function MattersList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredMatters, sortKey, sortDir, clients, services])
 
+  const paginatedMatters = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return sortedMatters.slice(start, start + pageSize)
+  }, [sortedMatters, page, pageSize])
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -139,16 +147,16 @@ export function MattersList() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 rounded-lg border border-ink-200 p-1 dark:border-ink-700">
             <button
-              onClick={() => switchView('kanban')}
-              className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium', view === 'kanban' ? 'bg-accent-600 text-white' : 'text-ink-500')}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" /> Kanban
-            </button>
-            <button
               onClick={() => switchView('list')}
               className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium', view === 'list' ? 'bg-accent-600 text-white' : 'text-ink-500')}
             >
               <ListIcon className="h-3.5 w-3.5" /> List
+            </button>
+            <button
+              onClick={() => switchView('kanban')}
+              className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium', view === 'kanban' ? 'bg-accent-600 text-white' : 'text-ink-500')}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Kanban
             </button>
           </div>
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => setNewOpen(true)}>
@@ -163,11 +171,11 @@ export function MattersList() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
             <Input placeholder="Search matters or clients…" className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-          <Select className="lg:w-56" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-            <option value="all">All clients</option>
+          <Select className="lg:w-60" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
+            <option value="all">All businesses &amp; clients</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.businessName ? `${c.businessName} (${c.name})` : c.name}
               </option>
             ))}
           </Select>
@@ -178,6 +186,12 @@ export function MattersList() {
                 {serviceLabel(s, services)}
               </option>
             ))}
+          </Select>
+          <Select className="lg:w-36" value={String(pageSize)} onChange={(e) => setPageSize(Number(e.target.value))}>
+            <option value="5">5 / page</option>
+            <option value="10">10 / page</option>
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
           </Select>
           <button
             onClick={() => setOverdueOnly((v) => !v)}
@@ -250,15 +264,22 @@ export function MattersList() {
                               </span>
                             </div>
                           )}
-                          <div className="mt-3 flex items-center justify-between">
+                          <div className="mt-3 flex items-center justify-between gap-2">
                             {client && (
-                              <span className="flex items-center gap-1.5">
-                                <Avatar name={client.name} color={client.avatarColor} size="sm" />
-                                <span className="max-w-24 truncate text-xs text-ink-500 dark:text-ink-400">{client.name}</span>
-                              </span>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <Avatar name={client.name} color={client.avatarColor} size="xs" />
+                                <div className="min-w-0 truncate">
+                                  <span className="truncate text-xs font-medium text-ink-700 dark:text-ink-300 block">
+                                    {client.businessName || client.name}
+                                  </span>
+                                  {client.businessName && (
+                                    <span className="text-[10px] text-ink-400 block truncate">{client.name}</span>
+                                  )}
+                                </div>
+                              </div>
                             )}
                             {m.dueDate && (
-                              <Badge tone={m.status === 'completed' ? 'success' : urgency === 'danger' ? 'danger' : urgency === 'warning' ? 'warning' : 'neutral'}>
+                              <Badge tone={m.status === 'completed' ? 'success' : urgency === 'critical' ? 'critical' : urgency === 'danger' ? 'danger' : urgency === 'warning' ? 'warning' : 'neutral'}>
                                 {formatDate(m.dueDate)}
                               </Badge>
                             )}
@@ -338,7 +359,7 @@ export function MattersList() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedMatters.map((m) => {
+                    {paginatedMatters.map((m) => {
                       const client = clients.find((c) => c.id === m.clientId)
                       const service = services.find((s) => s.id === m.serviceId)
                       const days = m.dueDate ? daysUntil(m.dueDate) : null
@@ -377,10 +398,17 @@ export function MattersList() {
                           </td>
                         <td className="px-5 py-3.5">
                           {client && (
-                            <span className="flex items-center gap-2.5">
+                            <div className="flex items-center gap-2.5">
                               <Avatar name={client.name} color={client.avatarColor} size="sm" />
-                              <span className="text-ink-700 dark:text-ink-200">{client.name}</span>
-                            </span>
+                              <div className="min-w-0">
+                                <p className="font-medium text-ink-800 dark:text-ink-200">
+                                  {client.businessName || client.name}
+                                </p>
+                                {client.businessName && (
+                                  <p className="text-xs text-ink-400">{client.name}</p>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-ink-500 dark:text-ink-400">{serviceLabel(service, services)}</td>
@@ -392,7 +420,7 @@ export function MattersList() {
                         </td>
                         <td className="px-5 py-3.5">
                           {m.dueDate ? (
-                            <Badge tone={m.status === 'completed' ? 'success' : urgency === 'danger' ? 'danger' : urgency === 'warning' ? 'warning' : 'neutral'}>
+                            <Badge tone={m.status === 'completed' ? 'success' : urgency === 'critical' ? 'critical' : urgency === 'danger' ? 'danger' : urgency === 'warning' ? 'warning' : 'neutral'}>
                               {formatDate(m.dueDate)}
                             </Badge>
                           ) : (
@@ -405,6 +433,13 @@ export function MattersList() {
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                page={page}
+                pageSize={pageSize}
+                totalItems={sortedMatters.length}
+                onPageChange={setPage}
+                itemLabel="matters"
+              />
             </Card>
           </>
         )
