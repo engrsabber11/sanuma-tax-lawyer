@@ -3,16 +3,22 @@ import * as seed from './mockData'
 import type {
   Client,
   ClientDocument,
-  ComplianceDeadline,
+  ClientYear,
   CreditNote,
   DocumentTypeDef,
+  DueRule,
   Expense,
+  FilingPeriod,
   Invoice,
   InvoiceLine,
   LedgerEntry,
   Matter,
+  ObligationType,
+  Periodicity,
+  QuarterStagger,
   Quote,
   ReferralBonusRule,
+  Registration,
   ReminderLogEntry,
   ReminderRule,
   Service,
@@ -20,6 +26,15 @@ import type {
 } from './types'
 import { addDays, genId, urgencyFromDate } from '../lib/utils'
 import { defaultChecklistForService } from './matterChecklists'
+import { obligationTypes as seedObligationTypes } from './obligationTypes'
+import { deriveFirstPeriod, generateFilingPeriods } from './filingPeriods'
+
+/**
+ * How far ahead filing periods are generated: the current tax year + this many.
+ * One constant, one place to change it — see open decision #3 in
+ * plans/tax-year-engine/PLAN.md.
+ */
+export const PERIOD_HORIZON_YEARS = 1
 
 export const TODAY = seed.TODAY
 
@@ -34,8 +49,11 @@ interface FirmProfile {
 interface DataContextValue {
   clients: Client[]
   clientDocuments: ClientDocument[]
-  complianceDeadlines: ComplianceDeadline[]
   documentTypes: DocumentTypeDef[]
+  obligationTypes: ObligationType[]
+  registrations: Registration[]
+  filingPeriods: FilingPeriod[]
+  clientYears: ClientYear[]
   reminderRules: ReminderRule[]
   reminderLog: ReminderLogEntry[]
   matters: Matter[]
@@ -52,10 +70,28 @@ interface DataContextValue {
   addClient: (input: Omit<Client, 'id' | 'createdAt' | 'avatarColor'> & { avatarColor?: string }) => Client
   updateClient: (id: string, patch: Partial<Client>) => void
 
-  addDocument: (input: { clientId: string; typeId: string; number?: string; issueDate: string; expiryDate: string; matterId?: string }) => void
+  addDocument: (input: { clientId: string; typeId: string; number?: string; issueDate: string; expiryDate: string; matterId?: string }) => ClientDocument
   addDocumentType: (input: Omit<DocumentTypeDef, 'id'>) => void
   linkDocumentToMatter: (documentId: string, matterId: string) => void
   unlinkDocumentFromMatter: (documentId: string) => void
+
+  addRegistration: (input: {
+    clientId: string
+    obligationTypeId: string
+    registrationNumber?: string
+    effectiveDate: string
+    periodicity?: Periodicity
+    staggerGroup?: QuarterStagger
+    fiscalYearEndMonth?: number
+    dueRule?: DueRule
+    certificateDocumentId?: string
+  }) => Registration
+  updateRegistration: (id: string, patch: Partial<Registration>) => void
+  deregisterRegistration: (id: string, deregisteredAt: string) => void
+  regeneratePeriodsFor: (registrationId: string) => void
+  markFilingFiled: (filingPeriodId: string, filedAt?: string) => void
+  markFilingNotRequired: (filingPeriodId: string) => void
+  openClientYear: (clientId: string, taxYear: number) => void
 
   addMatter: (input: { clientId: string; title: string; serviceId: string; dueDate?: string }) => Matter
   updateMatter: (id: string, patch: Partial<Matter>) => void
@@ -91,12 +127,22 @@ const DataContext = createContext<DataContextValue | null>(null)
 
 const AVATAR_COLORS = ['bg-accent-500', 'bg-warning-500', 'bg-success-500', 'bg-danger-500', 'bg-accent-700', 'bg-warning-600', 'bg-success-600', 'bg-accent-600', 'bg-danger-600', 'bg-ink-500']
 
-const STORAGE_KEY = 'sanuma-app-state-v1'
+/**
+ * Bumped from v1 in Phase 2: v1 state has no registrations, so loading it would
+ * render an app whose compliance spine is empty while every other slice looks
+ * populated — worse than a clean reseed, and harder to diagnose.
+ */
+const STORAGE_KEY = 'sanuma-app-state-v2'
+const ONBOARDING_DRAFT_KEY = 'sanuma-onboarding-draft'
 
 interface PersistedState {
   clients?: Client[]
   clientDocuments?: ClientDocument[]
   documentTypes?: DocumentTypeDef[]
+  obligationTypes?: ObligationType[]
+  registrations?: Registration[]
+  filingPeriods?: FilingPeriod[]
+  clientYears?: ClientYear[]
   reminderRules?: ReminderRule[]
   matters?: Matter[]
   services?: Service[]
@@ -119,6 +165,38 @@ function loadPersisted(): PersistedState {
   }
 }
 
+function currentTaxYear(): number {
+  return Number(TODAY.slice(0, 4))
+}
+
+function horizonYear(): number {
+  return currentTaxYear() + PERIOD_HORIZON_YEARS
+}
+
+/**
+ * Completes the seed registrations, whose first period is left to
+ * deriveFirstPeriod() rather than hand-written — the same path onboarding takes,
+ * so the seed cannot drift from real entry.
+ */
+function hydrateSeedRegistrations(): Registration[] {
+  return seed.registrations.map((r) => ({
+    ...r,
+    ...deriveFirstPeriod(r.effectiveDate, r.periodicity, {
+      staggerGroup: r.staggerGroup,
+      fiscalYearEndMonth: r.fiscalYearEndMonth,
+    }),
+  }))
+}
+
+function buildSeedFilingPeriods(regs: Registration[], types: ObligationType[]): FilingPeriod[] {
+  const generated = regs.flatMap((r) => {
+    const type = types.find((t) => t.id === r.obligationTypeId)
+    return type ? generateFilingPeriods(r, type, horizonYear()) : []
+  })
+  // Historical periods are marked filed — see applySeedFilingHistory.
+  return seed.applySeedFilingHistory(generated)
+}
+
 function docStatusFromExpiry(expiryDate: string): ClientDocument['status'] {
   const urgency = urgencyFromDate(expiryDate)
   if (urgency === 'danger') return 'expired'
@@ -130,8 +208,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [persisted] = useState(loadPersisted)
   const [clients, setClients] = useState<Client[]>(persisted.clients ?? seed.clients)
   const [clientDocuments, setClientDocuments] = useState<ClientDocument[]>(persisted.clientDocuments ?? seed.clientDocuments)
-  const [complianceDeadlines] = useState<ComplianceDeadline[]>(seed.complianceDeadlines)
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeDef[]>(persisted.documentTypes ?? seed.documentTypes)
+  // Setter intentionally omitted until Phase 8 adds the catalog editor.
+  const [obligationTypes] = useState<ObligationType[]>(persisted.obligationTypes ?? seedObligationTypes)
+  const [registrations, setRegistrations] = useState<Registration[]>(persisted.registrations ?? hydrateSeedRegistrations)
+  const [filingPeriods, setFilingPeriods] = useState<FilingPeriod[]>(
+    () => persisted.filingPeriods ?? buildSeedFilingPeriods(hydrateSeedRegistrations(), persisted.obligationTypes ?? seedObligationTypes),
+  )
+  const [clientYears, setClientYears] = useState<ClientYear[]>(persisted.clientYears ?? [])
   const [reminderRules, setReminderRules] = useState<ReminderRule[]>(persisted.reminderRules ?? seed.reminderRules)
   const [reminderLog] = useState<ReminderLogEntry[]>(seed.reminderLog)
   const [matters, setMattersState] = useState<Matter[]>(
@@ -160,6 +244,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clients,
       clientDocuments,
       documentTypes,
+      obligationTypes,
+      registrations,
+      filingPeriods,
+      clientYears,
       reminderRules,
       matters,
       services,
@@ -177,6 +265,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     clients,
     clientDocuments,
     documentTypes,
+    obligationTypes,
+    registrations,
+    filingPeriods,
+    clientYears,
     reminderRules,
     matters,
     services,
@@ -189,6 +281,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     referralBonusRules,
     firmProfile,
   ])
+
+  useEffect(() => {
+    // The draft shape changes in Phase 3; a v1 draft would crash the wizard.
+    localStorage.removeItem(ONBOARDING_DRAFT_KEY)
+  }, [])
 
   function addLedgerEntry(input: Omit<LedgerEntry, 'id'>) {
     setLedgerEntries((prev) => [...prev, { id: genId('l'), ...input }])
@@ -210,7 +307,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
 
   function addDocument(input: { clientId: string; typeId: string; number?: string; issueDate: string; expiryDate: string; matterId?: string }) {
-    setClientDocuments((prev) => [...prev, { id: genId('d'), status: docStatusFromExpiry(input.expiryDate), ...input }])
+    const created: ClientDocument = { id: genId('d'), status: docStatusFromExpiry(input.expiryDate), ...input }
+    setClientDocuments((prev) => [...prev, created])
+    return created
   }
 
   function linkDocumentToMatter(documentId: string, matterId: string) {
@@ -230,6 +329,135 @@ export function DataProvider({ children }: { children: ReactNode }) {
         { id: genId('rr'), typeId: id, typeName: input.name, daysBefore: input.defaultReminderDays, channels: input.defaultChannels, enabled: true },
       ])
     }
+  }
+
+  // --- registrations & filing periods -------------------------------------
+
+  /**
+   * Regenerates a registration's schedule WITHOUT touching history.
+   *
+   * A period is "locked" once it has been filed, or has a matter or invoice
+   * against it. Locked periods are preserved including their original dates: if
+   * a filed period's dates were recomputed, the invoice already issued against
+   * it would start describing a period that no longer matches what was filed
+   * with the FTA. Keying on periodStart also keeps matterId / invoiceId
+   * back-links intact across a regeneration.
+   *
+   * Where a locked period contradicts the fresh schedule (someone corrected an
+   * effective date after filing), the locked one wins and the mismatch stays
+   * visible rather than being resolved silently.
+   */
+  function regeneratePeriodsFor(registrationId: string) {
+    setFilingPeriods((prev) => {
+      const reg = registrations.find((r) => r.id === registrationId)
+      const type = reg && obligationTypes.find((t) => t.id === reg.obligationTypeId)
+      if (!reg || !type) return prev
+
+      const others = prev.filter((p) => p.registrationId !== registrationId)
+      const mine = prev.filter((p) => p.registrationId === registrationId)
+      const locked = mine.filter((p) => p.state === 'filed' || p.matterId || p.invoiceId)
+      const lockedByStart = new Map(locked.map((p) => [p.periodStart, p]))
+
+      const fresh = generateFilingPeriods(reg, type, horizonYear())
+      const merged = fresh.map((p) => lockedByStart.get(p.periodStart) ?? p)
+
+      // Locked periods the fresh schedule no longer produces are kept, never dropped.
+      const orphanedLocked = locked.filter((p) => !fresh.some((f) => f.periodStart === p.periodStart))
+
+      return [...others, ...orphanedLocked, ...merged]
+    })
+  }
+
+  function addRegistration(input: {
+    clientId: string
+    obligationTypeId: string
+    registrationNumber?: string
+    effectiveDate: string
+    periodicity?: Periodicity
+    staggerGroup?: QuarterStagger
+    fiscalYearEndMonth?: number
+    dueRule?: DueRule
+    certificateDocumentId?: string
+  }) {
+    const type = obligationTypes.find((t) => t.id === input.obligationTypeId)
+    const periodicity = input.periodicity ?? type?.periodicity ?? 'quarterly'
+    const staggerGroup = input.staggerGroup ?? (periodicity === 'quarterly' ? type?.staggerOptions?.[0] : undefined)
+    const fiscalYearEndMonth = input.fiscalYearEndMonth ?? (periodicity === 'annual' ? (type?.fiscalYearEndMonth ?? 12) : undefined)
+
+    // Three inputs in, a full schedule out — this is what keeps onboarding short.
+    const firstPeriod = deriveFirstPeriod(input.effectiveDate, periodicity, { staggerGroup, fiscalYearEndMonth })
+
+    const created: Registration = {
+      id: genId('reg'),
+      clientId: input.clientId,
+      obligationTypeId: input.obligationTypeId,
+      registrationNumber: input.registrationNumber,
+      effectiveDate: input.effectiveDate,
+      ...firstPeriod,
+      periodicity,
+      staggerGroup,
+      fiscalYearEndMonth,
+      dueRule: input.dueRule,
+      certificateDocumentId: input.certificateDocumentId,
+      status: 'active',
+      createdAt: TODAY,
+    }
+
+    setRegistrations((prev) => [...prev, created])
+    if (type) {
+      setFilingPeriods((prev) => [...prev, ...generateFilingPeriods(created, type, horizonYear())])
+    }
+    return created
+  }
+
+  function updateRegistration(id: string, patch: Partial<Registration>) {
+    setRegistrations((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r
+        const next = { ...r, ...patch }
+        // If the cycle or effective date moved, the first period must be
+        // re-derived — otherwise the whole schedule walks from a stale anchor.
+        const anchorChanged =
+          patch.effectiveDate !== undefined ||
+          patch.periodicity !== undefined ||
+          patch.staggerGroup !== undefined ||
+          patch.fiscalYearEndMonth !== undefined
+        if (anchorChanged && patch.firstPeriodStart === undefined) {
+          Object.assign(
+            next,
+            deriveFirstPeriod(next.effectiveDate, next.periodicity, {
+              staggerGroup: next.staggerGroup,
+              fiscalYearEndMonth: next.fiscalYearEndMonth,
+            }),
+          )
+        }
+        return next
+      }),
+    )
+  }
+
+  function deregisterRegistration(id: string, deregisteredAt: string) {
+    setRegistrations((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'deregistered', deregisteredAt } : r)))
+  }
+
+  function markFilingFiled(filingPeriodId: string, filedAt?: string) {
+    setFilingPeriods((prev) =>
+      prev.map((p) => (p.id === filingPeriodId ? { ...p, state: 'filed', filedAt: filedAt ?? TODAY } : p)),
+    )
+  }
+
+  function markFilingNotRequired(filingPeriodId: string) {
+    setFilingPeriods((prev) =>
+      prev.map((p) => (p.id === filingPeriodId ? { ...p, state: 'not-required', filedAt: undefined } : p)),
+    )
+  }
+
+  function openClientYear(clientId: string, taxYear: number) {
+    setClientYears((prev) =>
+      prev.some((y) => y.clientId === clientId && y.taxYear === taxYear)
+        ? prev
+        : [...prev, { clientId, taxYear, status: 'open' }],
+    )
   }
 
   function addMatter(input: { clientId: string; title: string; serviceId: string; dueDate?: string }) {
@@ -381,8 +609,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       value={{
         clients,
         clientDocuments,
-        complianceDeadlines,
         documentTypes,
+        obligationTypes,
+        registrations,
+        filingPeriods,
+        clientYears,
         reminderRules,
         reminderLog,
         services,
@@ -401,6 +632,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addDocumentType,
         linkDocumentToMatter,
         unlinkDocumentFromMatter,
+        addRegistration,
+        updateRegistration,
+        deregisterRegistration,
+        regeneratePeriodsFor,
+        markFilingFiled,
+        markFilingNotRequired,
+        openClientYear,
         addMatter,
         updateMatter,
         toggleMatterChecklistItem,

@@ -29,7 +29,7 @@ export function ClientProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { clients, clientDocuments, complianceDeadlines, documentTypes, matters, invoices, walletTransactions, services } = useData()
+  const { clients, clientDocuments, obligationTypes, filingPeriods, documentTypes, matters, invoices, walletTransactions, services } = useData()
   const client = clients.find((c) => c.id === id)
   const [tab, setTab] = useState(params.get('tab') ?? 'overview')
   const [editOpen, setEditOpen] = useState(false)
@@ -37,7 +37,27 @@ export function ClientProfile() {
   const [walletModal, setWalletModal] = useState<'withdraw' | 'apply' | null>(null)
 
   const docs = clientDocuments.filter((d) => d.clientId === id)
-  const deadlines = complianceDeadlines.filter((d) => d.clientId === id)
+  // Phase 5 gives these their own Compliance tab; for now they keep the shape
+  // the Documents tab already renders.
+  const clientFilings = filingPeriods.filter((p) => p.clientId === id)
+  const filedCount = clientFilings.filter((p) => p.state === 'filed').length
+  // Outstanding only. A client registered in 2019 has ~36 periods, and listing
+  // the filed ones here would bury the ones that still need doing. Phase 5's
+  // Compliance tab is where the full history belongs.
+  const deadlines = clientFilings
+    .filter((p) => p.state === 'pending')
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .map((p) => {
+      const type = obligationTypes.find((t) => t.id === p.obligationTypeId)
+      return {
+        id: p.id,
+        name: `${type?.name ?? 'Filing'} — ${p.label}`,
+        recurrence: type?.periodicity ?? 'quarterly',
+        nextDueDate: p.dueDate,
+        state: p.state,
+        urgency: urgencyFromDate(p.dueDate),
+      }
+    })
   const clientMatters = matters.filter((m) => m.clientId === id)
   const clientInvoices = invoices.filter((i) => i.clientId === id)
   const walletTx = walletTransactions.filter((w) => w.clientId === id)
@@ -212,18 +232,25 @@ export function ClientProfile() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Compliance Deadlines</CardTitle>
+              <CardTitle>Upcoming Filings</CardTitle>
+              {filedCount > 0 && <span className="text-xs text-ink-400">{filedCount} filed</span>}
             </CardHeader>
             <CardBody className="flex flex-col gap-1 pt-2">
-              {deadlines.length === 0 && <p className="px-2 py-3 text-sm text-ink-400">No recurring filings tracked.</p>}
+              {deadlines.length === 0 && <p className="px-2 py-3 text-sm text-ink-400">No outstanding filings.</p>}
               {deadlines.map((d) => (
                 <div key={d.id} className="flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-ink-50 dark:hover:bg-ink-800">
                   <Receipt className="h-4 w-4 shrink-0 text-ink-400" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-ink-800 dark:text-ink-100">{d.name}</p>
-                    <p className="text-xs text-ink-400 capitalize">{d.recurrence} · Next due {formatDate(d.nextDueDate)}</p>
+                    <p className="text-xs text-ink-400 capitalize">{d.recurrence} · Due {formatDate(d.nextDueDate)}</p>
                   </div>
-                  <Badge tone={d.status === 'overdue' ? 'danger' : d.status === 'due-soon' ? 'warning' : 'neutral'}>{d.status}</Badge>
+                  <Badge
+                    tone={
+                      d.state === 'filed' ? 'success' : d.state === 'not-required' ? 'neutral' : d.urgency === 'danger' ? 'danger' : d.urgency === 'warning' ? 'warning' : 'neutral'
+                    }
+                  >
+                    {d.state === 'filed' ? 'filed' : d.state === 'not-required' ? 'n/a' : d.urgency === 'danger' ? 'overdue' : d.urgency === 'warning' ? 'due soon' : 'upcoming'}
+                  </Badge>
                 </div>
               ))}
             </CardBody>

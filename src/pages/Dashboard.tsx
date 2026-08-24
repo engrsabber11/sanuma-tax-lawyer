@@ -26,7 +26,7 @@ const revenueTrend = [
 ]
 
 export function Dashboard() {
-  const { clients, clientDocuments, complianceDeadlines, documentTypes, invoices, expenses, reminderLog } = useData()
+  const { clients, clientDocuments, obligationTypes, filingPeriods, documentTypes, invoices, expenses, reminderLog } = useData()
   const clientById = (id: string) => clients.find((c) => c.id === id)
 
   const expiringDocs = clientDocuments
@@ -34,9 +34,17 @@ export function Dashboard() {
     .filter((d) => d.urgency !== 'ok')
     .sort((a, b) => a.days - b.days)
 
-  const dueDeadlines = complianceDeadlines
-    .map((d) => ({ ...d, days: daysUntil(d.nextDueDate) }))
-    .filter((d) => d.status !== 'filed')
+  // Derived from generated filing periods — urgency comes from the due date, not
+  // from a stored status string that would go stale.
+  const dueDeadlines = filingPeriods
+    .filter((p) => p.state === 'pending')
+    .map((p) => ({
+      id: p.id,
+      clientId: p.clientId,
+      name: `${obligationTypes.find((t) => t.id === p.obligationTypeId)?.name ?? 'Filing'} — ${p.label}`,
+      nextDueDate: p.dueDate,
+      days: daysUntil(p.dueDate),
+    }))
     .sort((a, b) => a.days - b.days)
 
   const outstandingInvoices = invoices.filter((i) => i.status !== 'paid')

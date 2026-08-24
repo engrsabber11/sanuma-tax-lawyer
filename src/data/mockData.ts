@@ -1,7 +1,6 @@
 import type {
   Client,
   ClientDocument,
-  ComplianceDeadline,
   CreditNote,
   DocumentTypeDef,
   Expense,
@@ -9,7 +8,9 @@ import type {
   LedgerEntry,
   Matter,
   Quote,
+  FilingPeriod,
   ReferralBonusRule,
+  Registration,
   ReminderLogEntry,
   ReminderRule,
   Service,
@@ -45,16 +46,16 @@ export const documentTypes: DocumentTypeDef[] = [
 ]
 
 export const clients: Client[] = [
-  { id: 'c1', name: 'Ahmed Al Falasi', businessName: 'Al Falasi Grocery LLC', businessType: 'grocery', trn: '10034**********', phone: '+971 50 111 2233', whatsapp: '+971 50 111 2233', email: 'ahmed.falasi@example.ae', status: 'active', createdAt: '2024-02-10', avatarColor: 'bg-accent-500' },
-  { id: 'c2', name: 'Fatima Hassan', businessName: 'Hassan Trading Co.', businessType: 'trading', trn: '10087**********', phone: '+971 52 222 3344', whatsapp: '+971 52 222 3344', email: 'fatima.hassan@example.ae', referredById: 'c1', status: 'active', createdAt: '2024-05-18', avatarColor: 'bg-warning-500' },
-  { id: 'c3', name: 'Mohammed Rashid', businessName: 'Rashid Mart', businessType: 'grocery', trn: '10091**********', phone: '+971 55 333 4455', whatsapp: '+971 55 333 4455', email: 'm.rashid@example.ae', referredById: 'c2', status: 'active', createdAt: '2024-09-02', avatarColor: 'bg-success-500' },
-  { id: 'c4', name: 'Sara Abdullah', businessName: 'Deira Fresh Grocery', businessType: 'grocery', trn: '10102**********', phone: '+971 56 444 5566', whatsapp: '+971 56 444 5566', email: 'sara.abdullah@example.ae', referredById: 'c1', status: 'active', createdAt: '2025-01-14', avatarColor: 'bg-danger-500' },
-  { id: 'c5', name: 'Yousef Khan', businessName: 'Khan F&B Ventures', businessType: 'f&b', trn: '10119**********', phone: '+971 50 555 6677', whatsapp: '+971 50 555 6677', email: 'yousef.khan@example.ae', status: 'active', createdAt: '2024-11-30', avatarColor: 'bg-accent-700' },
-  { id: 'c6', name: 'Layla Ahmed', businessName: 'Al Barsha Retail', businessType: 'services', trn: '10125**********', phone: '+971 54 666 7788', whatsapp: '+971 54 666 7788', email: 'layla.ahmed@example.ae', referredById: 'c5', status: 'active', createdAt: '2025-03-05', avatarColor: 'bg-warning-600' },
-  { id: 'c7', name: 'Omar Saeed', businessName: 'Saeed Consulting Services', businessType: 'services', trn: '10133**********', phone: '+971 58 777 8899', whatsapp: '+971 58 777 8899', email: 'omar.saeed@example.ae', referredById: 'c6', status: 'active', createdAt: '2025-06-21', avatarColor: 'bg-success-600' },
-  { id: 'c8', name: 'Noora Salem', businessName: 'Salem Trading LLC', businessType: 'trading', trn: '10140**********', phone: '+971 50 888 9900', whatsapp: '+971 50 888 9900', email: 'noora.salem@example.ae', status: 'active', createdAt: '2025-02-11', avatarColor: 'bg-accent-600' },
-  { id: 'c9', name: 'Khalid Nasser', businessName: 'Nasser Grocery & Supermarket', businessType: 'grocery', trn: '10148**********', phone: '+971 52 999 0011', whatsapp: '+971 52 999 0011', email: 'khalid.nasser@example.ae', referredById: 'c8', status: 'active', createdAt: '2025-07-09', avatarColor: 'bg-danger-600' },
-  { id: 'c10', name: 'Priya Sharma', businessType: 'other', phone: '+971 55 000 1122', whatsapp: '+971 55 000 1122', email: 'priya.sharma@example.com', referredById: 'c1', status: 'onboarding', createdAt: '2026-07-18', avatarColor: 'bg-ink-500' },
+  { id: 'c1', personType: 'legal', name: 'Ahmed Al Falasi', businessName: 'Al Falasi Grocery LLC', businessType: 'grocery', trn: '10034**********', phone: '+971 50 111 2233', whatsapp: '+971 50 111 2233', email: 'ahmed.falasi@example.ae', status: 'active', createdAt: '2024-02-10', avatarColor: 'bg-accent-500' },
+  { id: 'c2', personType: 'legal', name: 'Fatima Hassan', businessName: 'Hassan Trading Co.', businessType: 'trading', trn: '10087**********', phone: '+971 52 222 3344', whatsapp: '+971 52 222 3344', email: 'fatima.hassan@example.ae', referredById: 'c1', status: 'active', createdAt: '2024-05-18', avatarColor: 'bg-warning-500' },
+  { id: 'c3', personType: 'legal', name: 'Mohammed Rashid', businessName: 'Rashid Mart', businessType: 'grocery', trn: '10091**********', phone: '+971 55 333 4455', whatsapp: '+971 55 333 4455', email: 'm.rashid@example.ae', referredById: 'c2', status: 'active', createdAt: '2024-09-02', avatarColor: 'bg-success-500' },
+  { id: 'c4', personType: 'legal', name: 'Sara Abdullah', businessName: 'Deira Fresh Grocery', businessType: 'grocery', trn: '10102**********', phone: '+971 56 444 5566', whatsapp: '+971 56 444 5566', email: 'sara.abdullah@example.ae', referredById: 'c1', status: 'active', createdAt: '2025-01-14', avatarColor: 'bg-danger-500' },
+  { id: 'c5', personType: 'legal', name: 'Yousef Khan', businessName: 'Khan F&B Ventures', businessType: 'f&b', trn: '10119**********', phone: '+971 50 555 6677', whatsapp: '+971 50 555 6677', email: 'yousef.khan@example.ae', status: 'active', createdAt: '2024-11-30', avatarColor: 'bg-accent-700' },
+  { id: 'c6', personType: 'legal', name: 'Layla Ahmed', businessName: 'Al Barsha Retail', businessType: 'services', trn: '10125**********', phone: '+971 54 666 7788', whatsapp: '+971 54 666 7788', email: 'layla.ahmed@example.ae', referredById: 'c5', status: 'active', createdAt: '2025-03-05', avatarColor: 'bg-warning-600' },
+  { id: 'c7', personType: 'legal', name: 'Omar Saeed', businessName: 'Saeed Consulting Services', businessType: 'services', trn: '10133**********', phone: '+971 58 777 8899', whatsapp: '+971 58 777 8899', email: 'omar.saeed@example.ae', referredById: 'c6', status: 'active', createdAt: '2025-06-21', avatarColor: 'bg-success-600' },
+  { id: 'c8', personType: 'legal', name: 'Noora Salem', businessName: 'Salem Trading LLC', businessType: 'trading', trn: '10140**********', phone: '+971 50 888 9900', whatsapp: '+971 50 888 9900', email: 'noora.salem@example.ae', status: 'active', createdAt: '2025-02-11', avatarColor: 'bg-accent-600' },
+  { id: 'c9', personType: 'legal', name: 'Khalid Nasser', businessName: 'Nasser Grocery & Supermarket', businessType: 'grocery', trn: '10148**********', phone: '+971 52 999 0011', whatsapp: '+971 52 999 0011', email: 'khalid.nasser@example.ae', referredById: 'c8', status: 'active', createdAt: '2025-07-09', avatarColor: 'bg-danger-600' },
+  { id: 'c10', personType: 'natural', name: 'Priya Sharma', businessType: 'other', phone: '+971 55 000 1122', whatsapp: '+971 55 000 1122', email: 'priya.sharma@example.com', referredById: 'c1', status: 'onboarding', createdAt: '2026-07-18', avatarColor: 'bg-ink-500' },
 ]
 
 export const clientDocuments: ClientDocument[] = [
@@ -98,16 +99,6 @@ export const clientDocuments: ClientDocument[] = [
   { id: 'd30', clientId: 'c9', typeId: 'dt-civil-defense', number: 'CD-77801', issueDate: '2025-07-09', expiryDate: '2027-07-09', status: 'valid' },
 ]
 
-export const complianceDeadlines: ComplianceDeadline[] = [
-  { id: 'cd1', clientId: 'c1', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
-  { id: 'cd2', clientId: 'c2', name: 'VAT Return Filing (Jun 2026)', recurrence: 'monthly', nextDueDate: '2026-07-15', status: 'overdue' },
-  { id: 'cd3', clientId: 'c3', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
-  { id: 'cd4', clientId: 'c4', name: 'Corporate Tax Return (FY2025)', recurrence: 'annual', nextDueDate: '2026-09-30', status: 'upcoming' },
-  { id: 'cd5', clientId: 'c5', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
-  { id: 'cd6', clientId: 'c8', name: 'ESR Notification (2026)', recurrence: 'annual', nextDueDate: '2026-08-30', status: 'upcoming' },
-  { id: 'cd7', clientId: 'c9', name: 'VAT Return Filing (Q2 2026)', recurrence: 'quarterly', nextDueDate: '2026-07-28', status: 'due-soon' },
-  { id: 'cd8', clientId: 'c6', name: 'Corporate Tax Return (FY2025)', recurrence: 'annual', nextDueDate: '2026-09-30', status: 'upcoming' },
-]
 
 export const reminderRules: ReminderRule[] = documentTypes
   .filter((t) => t.hasExpiry)
@@ -222,3 +213,68 @@ export const referralBonusRules: ReferralBonusRule[] = [
   { level: 2, label: 'Sub-referral (one level down)', type: 'flat', value: 60, enabled: true },
   { level: 3, label: 'Third level', type: 'percentage', value: 2, enabled: false },
 ]
+
+/**
+ * Seed registrations. The matrix is chosen for coverage: every generator code
+ * path should be visible in the running app, not only in the golden tests.
+ *
+ * `firstPeriodStart` / `firstPeriodEnd` are left to the store, which calls
+ * deriveFirstPeriod() from the effective date + cycle — the same path the
+ * onboarding wizard takes, so the seed cannot drift from real entry.
+ */
+export const registrations: Array<Omit<Registration, 'firstPeriodStart' | 'firstPeriodEnd'>> = [
+  // Quarterly VAT across all three FTA stagger groups, so the staggering is
+  // visible in the UI rather than theoretical.
+  { id: 'reg-1', clientId: 'c1', obligationTypeId: 'ob-vat-return', registrationNumber: '100341234500003', effectiveDate: '2019-01-15', periodicity: 'quarterly', staggerGroup: 'jan-apr-jul-oct', certificateDocumentId: 'd7', status: 'active', createdAt: '2019-01-15' },
+  { id: 'reg-3', clientId: 'c3', obligationTypeId: 'ob-vat-return', registrationNumber: '100915678900003', effectiveDate: '2021-05-01', periodicity: 'quarterly', staggerGroup: 'feb-may-aug-nov', status: 'active', createdAt: '2021-05-01' },
+  { id: 'reg-5', clientId: 'c5', obligationTypeId: 'ob-vat-return', registrationNumber: '101192345600003', effectiveDate: '2022-03-01', periodicity: 'quarterly', staggerGroup: 'mar-jun-sep-dec', status: 'active', createdAt: '2022-03-01' },
+
+  // Monthly filer — the other VAT path.
+  { id: 'reg-2', clientId: 'c2', obligationTypeId: 'ob-vat-return-monthly', registrationNumber: '100878765400003', effectiveDate: '2020-04-01', periodicity: 'monthly', certificateDocumentId: 'd11', status: 'active', createdAt: '2020-04-01' },
+
+  // Registered mid-period and recently — produces a visible stub first period.
+  { id: 'reg-9', clientId: 'c9', obligationTypeId: 'ob-vat-return', registrationNumber: '101483456700003', effectiveDate: '2026-07-20', periodicity: 'quarterly', staggerGroup: 'jan-apr-jul-oct', status: 'active', createdAt: '2026-07-20' },
+
+  // Corporate Tax — annual, 9-month due rule.
+  { id: 'reg-4', clientId: 'c4', obligationTypeId: 'ob-ct-return', registrationNumber: '101026543200001', effectiveDate: '2025-01-01', periodicity: 'annual', fiscalYearEndMonth: 12, status: 'active', createdAt: '2025-01-01' },
+  // Effective 1 Feb, so the first CT period is an 11-month stub — the exact
+  // shape of the sample Corporate Tax certificate.
+  { id: 'reg-6', clientId: 'c6', obligationTypeId: 'ob-ct-return', registrationNumber: '101259876500001', effectiveDate: '2025-02-01', periodicity: 'annual', fiscalYearEndMonth: 12, status: 'active', createdAt: '2025-02-01' },
+
+  // Multi-registration client: VAT and Corporate Tax on one file.
+  { id: 'reg-8a', clientId: 'c8', obligationTypeId: 'ob-vat-return', registrationNumber: '101401112200003', effectiveDate: '2021-01-01', periodicity: 'quarterly', staggerGroup: 'jan-apr-jul-oct', certificateDocumentId: 'd27', status: 'active', createdAt: '2021-01-01' },
+  { id: 'reg-8b', clientId: 'c8', obligationTypeId: 'ob-ct-return', registrationNumber: '101401112200001', effectiveDate: '2025-01-01', periodicity: 'annual', fiscalYearEndMonth: 12, status: 'active', createdAt: '2025-01-01' },
+
+  // Natural person — the "personal tax" case. No UAE personal income tax; a
+  // sole establishment over the AED 1M threshold registers for Corporate Tax
+  // on a calendar-year period.
+  { id: 'reg-10', clientId: 'c10', obligationTypeId: 'ob-ct-return', registrationNumber: '101507778800001', effectiveDate: '2026-01-01', periodicity: 'annual', fiscalYearEndMonth: 12, status: 'active', createdAt: '2026-07-18' },
+
+  // c7 Saeed Consulting has NO registration on purpose — a licence-only client.
+  // Every screen must render correctly for them.
+]
+
+/**
+ * Registrations deliberately left with a lapsed filing, so the overdue state is
+ * exercised by the seed. reg-2 is Hassan Trading, which the seed already
+ * describes as behind: invoice inv-1003 is overdue and reminderLog rl4 is a
+ * failed "VAT Return overdue" message.
+ */
+const LAPSED_REGISTRATIONS = ['reg-2']
+const LAPSE_STARTS_FROM = '2026-05-01'
+
+/**
+ * A client registered in 2019 has filed their returns. Without this, every
+ * historical period generates as `pending` and the dashboard claims ~160
+ * overdue filings — which would be the app's most visible lie on first load.
+ *
+ * Past periods are marked filed on their due date; the lapsed registration
+ * keeps its recent periods pending so "overdue" is still represented.
+ */
+export function applySeedFilingHistory(periods: FilingPeriod[]): FilingPeriod[] {
+  return periods.map((p) => {
+    if (p.dueDate >= TODAY) return p
+    if (LAPSED_REGISTRATIONS.includes(p.registrationId) && p.dueDate >= LAPSE_STARTS_FROM) return p
+    return { ...p, state: 'filed', filedAt: p.dueDate }
+  })
+}

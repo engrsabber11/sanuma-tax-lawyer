@@ -13,6 +13,12 @@ export interface Client {
   status: 'active' | 'onboarding' | 'inactive'
   createdAt: string
   avatarColor: string
+  /**
+   * 'natural' = sole establishment / freelancer. The UAE has no personal income
+   * tax — a "personal tax" client is a natural person registered for Corporate
+   * Tax (calendar-year period, return due 30 Sep following) or for VAT.
+   */
+  personType?: 'legal' | 'natural'
 }
 
 export type DocumentCategory = 'personal' | 'business' | 'tax' | 'financial'
@@ -36,17 +42,6 @@ export interface ClientDocument {
   fileName?: string
   status: 'valid' | 'expiring' | 'expired' | 'renewal-in-progress'
   matterId?: string
-}
-
-export type Recurrence = 'monthly' | 'quarterly' | 'annual'
-
-export interface ComplianceDeadline {
-  id: string
-  clientId: string
-  name: string
-  recurrence: Recurrence
-  nextDueDate: string
-  status: 'upcoming' | 'due-soon' | 'overdue' | 'filed'
 }
 
 export type Channel = 'whatsapp' | 'email' | 'sms'
@@ -174,4 +169,94 @@ export interface ReferralBonusRule {
   type: 'percentage' | 'flat'
   value: number
   enabled: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Tax year & filing obligations
+// See plans/tax-year-engine/ — Phase 1.
+// ---------------------------------------------------------------------------
+
+export type Periodicity = 'monthly' | 'quarterly' | 'annual' | 'expiry'
+
+/**
+ * Quarterly stagger groups the FTA assigns, named by their period START months.
+ * UAE quarterly VAT is staggered, not calendar Q1-Q4 — assuming Jan-Mar is
+ * wrong for roughly two thirds of clients.
+ */
+export type QuarterStagger =
+  | 'jan-apr-jul-oct' // Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
+  | 'feb-may-aug-nov' // Feb-Apr, May-Jul, Aug-Oct, Nov-Jan
+  | 'mar-jun-sep-dec' // Mar-May, Jun-Aug, Sep-Nov, Dec-Feb
+
+export type DueRule =
+  | { kind: 'last-day-next-month' } // VAT, per the sample certificate
+  | { kind: 'day-of-next-month'; day: number } // 28 = statutory VAT, 15 = excise
+  | { kind: 'months-after-period-end'; months: number } // 9 = Corporate Tax
+  | { kind: 'on-expiry' } // licence-style renewals
+
+/** Editable catalog entry — this is what makes custom obligations data, not code. */
+export interface ObligationType {
+  id: string
+  name: string
+  shortName: string
+  periodicity: Periodicity
+  dueRule: DueRule
+  staggerOptions?: QuarterStagger[]
+  fiscalYearEndMonth?: number
+  serviceId?: string
+  /** DocumentTypeDef this obligation's certificate is filed under, if any. */
+  certificateDocumentTypeId?: string
+  defaultReminderDays: number[]
+  defaultChannels: Channel[]
+  builtIn: boolean
+}
+
+export interface Registration {
+  id: string
+  clientId: string
+  obligationTypeId: string
+  registrationNumber?: string
+  effectiveDate: string
+  firstPeriodStart: string
+  firstPeriodEnd: string
+  periodicity: Periodicity
+  staggerGroup?: QuarterStagger
+  fiscalYearEndMonth?: number
+  dueRule?: DueRule
+  certificateDocumentId?: string
+  status: 'active' | 'deregistered'
+  deregisteredAt?: string
+  createdAt: string
+}
+
+/**
+ * Only the manual state is stored. Urgency is DERIVED from dueDate at render
+ * time via urgencyFromDate() — a stored "expiring" string goes stale the moment
+ * the clock moves, and a filing must never falsely claim to be on time.
+ */
+export type FilingState = 'pending' | 'filed' | 'not-required'
+
+export interface FilingPeriod {
+  id: string
+  registrationId: string
+  clientId: string
+  obligationTypeId: string
+  label: string
+  periodStart: string
+  periodEnd: string
+  dueDate: string
+  taxYear: number
+  state: FilingState
+  filedAt?: string
+  matterId?: string
+  invoiceId?: string
+}
+
+export interface ClientYear {
+  clientId: string
+  taxYear: number
+  status: 'open' | 'closed'
+  closedAt?: string
+  reopenedAt?: string
+  reopenReason?: string
 }

@@ -10,7 +10,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { NewDocumentModal } from '../../components/modals/NewDocumentModal'
 import { cn, daysUntil, formatDate, urgencyFromDate, type Urgency } from '../../lib/utils'
 import { useData } from '../../data/store'
-import type { ClientDocument, ComplianceDeadline, DocumentTypeDef } from '../../data/types'
+import type { ClientDocument, DocumentTypeDef, FilingPeriod, ObligationType } from '../../data/types'
 
 interface UnifiedItem {
   id: string
@@ -23,7 +23,12 @@ interface UnifiedItem {
   matterId?: string
 }
 
-function buildItems(clientDocuments: ClientDocument[], complianceDeadlines: ComplianceDeadline[], documentTypes: DocumentTypeDef[]): UnifiedItem[] {
+function buildItems(
+  clientDocuments: ClientDocument[],
+  filingPeriods: FilingPeriod[],
+  obligationTypes: ObligationType[],
+  documentTypes: DocumentTypeDef[],
+): UnifiedItem[] {
   const docItems: UnifiedItem[] = clientDocuments.map((d) => {
     const type = documentTypes.find((t) => t.id === d.typeId)
     return {
@@ -37,22 +42,26 @@ function buildItems(clientDocuments: ClientDocument[], complianceDeadlines: Comp
       matterId: d.matterId,
     }
   })
-  const deadlineItems: UnifiedItem[] = complianceDeadlines.map((d) => ({
-    id: d.id,
-    clientId: d.clientId,
-    label: d.name,
-    category: 'tax',
-    date: d.nextDueDate,
-    urgency: urgencyFromDate(d.nextDueDate),
-    kind: 'deadline',
-  }))
+  // Real generated filing deadlines. Filed and not-required periods drop out —
+  // this view is about what is still outstanding.
+  const deadlineItems: UnifiedItem[] = filingPeriods
+    .filter((p) => p.state === 'pending')
+    .map((p) => ({
+      id: p.id,
+      clientId: p.clientId,
+      label: `${obligationTypes.find((t) => t.id === p.obligationTypeId)?.name ?? 'Filing'} — ${p.label}`,
+      category: 'tax',
+      date: p.dueDate,
+      urgency: urgencyFromDate(p.dueDate),
+      kind: 'deadline',
+    }))
   return [...docItems, ...deadlineItems].sort((a, b) => daysUntil(a.date) - daysUntil(b.date))
 }
 
 const CATEGORY_LABEL: Record<string, string> = { personal: 'Personal', business: 'Business', tax: 'Tax & Regulatory', financial: 'Financial' }
 
 export function DocumentVault() {
-  const { clients, clientDocuments, complianceDeadlines, documentTypes, matters } = useData()
+  const { clients, clientDocuments, filingPeriods, obligationTypes, documentTypes, matters } = useData()
   const [view, setView] = useState<'list' | 'calendar'>('list')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
@@ -60,8 +69,8 @@ export function DocumentVault() {
   const [addOpen, setAddOpen] = useState(false)
 
   const items = useMemo(
-    () => buildItems(clientDocuments, complianceDeadlines, documentTypes),
-    [clientDocuments, complianceDeadlines, documentTypes],
+    () => buildItems(clientDocuments, filingPeriods, obligationTypes, documentTypes),
+    [clientDocuments, filingPeriods, obligationTypes, documentTypes],
   )
 
   const filtered = items
