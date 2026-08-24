@@ -6,7 +6,7 @@
 > phase) into an AI build tool (Claude, v0, Lovable, bolt.new, Cursor, etc.) to
 > generate the product UI.
 
----
+------
 
 ## 0. Two-lens analysis this brief is based on
 
