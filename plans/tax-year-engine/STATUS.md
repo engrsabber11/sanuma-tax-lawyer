@@ -1,8 +1,11 @@
 # Tax Year & Filing Obligation Engine — Execution Status
 
 **Last updated:** 2026-08-24
-**Overall:** **3 of 8 phases complete** — the spine is built, and onboarding now
-generates a client's filing calendar from three fields per registration
+**Overall:** **4 of 8 phases complete** — the spine is built, onboarding
+generates the calendar, and the lawyer has a worklist to run it from.
+
+Also merged `origin/master` (PR #1, Muhammad Hannan) into this line of work —
+see the merge note below.
 
 Update this file **immediately after each phase is verified**, before starting
 the next one. Fill in the Verified column with what was actually checked, not
@@ -17,7 +20,7 @@ with "done" — the `matters-scale` plan's `PROGRESS.md` is the model to follow.
 | 1 | Domain model + pure period generator | `phases/PHASE-01-domain-model.md` | **done** | 27/27 golden cases pass; `tsc -b` clean; 0 lint findings in new files. Output below. |
 | 2 | Store wiring, seed rewrite, migration | `phases/PHASE-02-store-and-seed.md` | **done** | 223 periods from 10 registrations; 0 `ComplianceDeadline` refs; 12 routes, 0 console errors. Output below. |
 | 3 | Onboarding rebuilt around obligations | `phases/PHASE-03-onboarding.md` | **done** | Both sample certificates reproduced through the UI; 3 inputs per registration card; step 4 has 0 inputs; 0 console errors. Output below. |
-| 4 | Filings page | `phases/PHASE-04-filings-page.md` | pending | — |
+| 4 | Filings page | `phases/PHASE-04-filings-page.md` | **done** | `/filings` live; filter counts recorded below; 16 routes, 0 console errors. |
 | 5 | Compliance tab + year close/reopen | `phases/PHASE-05-compliance-tab-and-year.md` | pending | — |
 | 6 | Unified reminder engine | `phases/PHASE-06-reminder-engine.md` | pending | — |
 | 7 | Filing → Matter → Invoice chain | `phases/PHASE-07-filing-matter-invoice.md` | pending | — |
@@ -235,6 +238,72 @@ instead of the FY 2025 period the certificate is about, and the headline said
 hidden. Backdated registrations are normal, so `SchedulePreview` now shows the
 whole schedule sorted by due date, and the tax year is headline context rather
 than a filter.
+
+---
+
+## Merge with origin/master (2026-08-24)
+
+This branch was built on `76d86e0` and had not seen PR #1, so `master` was
+3 commits behind and 1 ahead — push was rejected, and `branch.master.*` had no
+upstream configured either. **Root cause: no `git fetch` before starting work.**
+Check `git status -sb` against the remote before beginning a phase.
+
+Both lines of work were kept in full. 28 of 31 files auto-merged; three
+conflicts:
+
+| File | Resolution |
+|---|---|
+| `store.tsx` | union — registration/filing actions + `PendingCharge` / `clientInitiated` |
+| `ClientProfile.tsx` | `filingPeriods` (this plan deletes `complianceDeadlines`) + `pendingChargesForClient` |
+| `ClientOnboarding.tsx` | both sides had rewritten it — see below |
+
+`ClientOnboarding.tsx` had 11 conflicts because both rewrites landed in the same
+file. Rather than hand-splice 212 lines of nested JSX, the referrer /
+sub-referrer UI from `origin/master` was extracted verbatim into
+`src/components/onboarding/ReferralPicker.tsx` and hosted inside step 1 of the
+obligation wizard. Their UAE `PhoneInput` and `isUaeMobile` gate were kept on the
+phone field. Nothing from either side was dropped.
+
+Verified after merge: phone validation rejects a malformed number and blocks
+Continue; the Level 1 bonus line and sub-referrer suggestion chips render; and
+the sample VAT certificate still yields `01 Aug – 31 Oct 2026, due 30 Nov 2026`.
+
+Note: `plans/penalty-fee/` arrived with the merge — that is the penalty-fee work
+this plan explicitly deferred, being done in parallel. No overlap.
+
+---
+
+## Phase 4 — verified output (2026-08-24)
+
+`tsc -b` clean · lint 13 findings, all pre-existing · 16 routes, **0 console
+errors** · `package.json` unchanged.
+
+```
+TILES   Outstanding 25 · Overdue 5 · Filed 9 · Total in year 34
+YEAR    one Select, 2027…2019, default 2026
+GROUPS  Overdue 5 | Due within 30 days 2 | Next 90 days 6 | Later 12 | Filed 9
+```
+
+### Filter counts (base 25 visible rows in 2026)
+
+| Filter | Result |
+|---|---|
+| Overdue only | 25 → **5** |
+| Client = Hassan Trading | 25 → **9** (monthly filer, 12/yr, 3 filed) |
+| Obligation = Corporate Tax | 25 → **4** |
+| Search `"Aug"` | 25 → **3** |
+| Tax year 2027 | 36 rows, 36 outstanding / 0 filed |
+| Tax year 2019 | 0 outstanding / 4 filed — pure history |
+| Client = c7 (licence-only) | 0 rows + "No filings match these filters" |
+
+### Actions
+
+| Action | Result |
+|---|---|
+| Mark filed | row leaves the group (25 → 24) and **persists across reload** |
+| Open matter | `NewMatterModal` opens pre-filled; existing matter navigates instead |
+| Command palette `"Aug–Oct"` | 3 filing hits |
+| Send reminder | rendered **disabled** — Phase 6 wires it, no fake send |
 
 ---
 

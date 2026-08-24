@@ -1,6 +1,6 @@
 # Phase 4 — Filings Page (the lawyer's daily view)
 
-**Status:** pending · **Depends on:** Phase 1, 2 · **UI changes:** new page
+**Status:** DONE (2026-08-24) · **Depends on:** Phase 1, 2 · **UI changes:** new page
 
 Where the lawyer actually lives. Today the closest thing is a dashboard card
 built on fake data; this replaces it with a working worklist.
@@ -112,3 +112,45 @@ copy that part.
 
 Reminder sending (Phase 6), auto-titled matters (Phase 7), calendar view —
 the vault's calendar is repointed in Phase 8 and covers that need.
+
+---
+
+## Implementation notes (written after the phase landed)
+
+### Two defects the browser check caught
+
+**A growing wall of year buttons.** The plan called for a year selector beside
+the `h1`, and the first build rendered one button per year that has periods.
+Client c1 registered in 2019, so that was **nine buttons**; a 2015 registration
+would be fifteen. Replaced with a `Select`, newest year first — which is also
+the control every other filter in this codebase uses (`MattersList`,
+`ClientsList`, `DocumentVault`), so it is the consistent choice as well as the
+scalable one.
+
+**`groupFor` mixed two clocks.** It read
+`p.dueDate.slice(0,7) === TODAY.slice(0,7)` to decide "due this month" while
+`daysUntil` — used two lines above for the overdue test and everywhere for
+urgency colour — reads the real system clock. `TODAY` is a frozen seed date, so
+the two disagree by however much real time has passed, and the disagreement
+grows. Now purely days-based, and the group is honestly labelled *"Due within
+30 days"* rather than *"Due this month"*.
+
+### Deviations from the plan
+
+- The plan listed *"Send reminder now"* as a row action. Rendered but
+  **disabled** with an explanatory tooltip until Phase 6 wires the engine —
+  a button that appears to send a WhatsApp message and does nothing is worse
+  than a visibly disabled one.
+- Added a four-tile summary row (Outstanding / Overdue / Filed / Total in year)
+  that the plan did not call for. It answers "where is this year" at a glance,
+  which is the year-based framing the whole plan is built on, and it costs one
+  `useMemo`.
+- Filings are now searchable from the command palette (outstanding only —
+  the palette is for jumping to live work).
+
+### Scale
+
+Client, obligation, matter, invoice and registration lookups are `Map`s built
+once in `useMemo`, not `Array.find` inside the row component. The plan called
+this out because `MattersList.tsx` does it the slow way in places; that pattern
+was deliberately not copied.

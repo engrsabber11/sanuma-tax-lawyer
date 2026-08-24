@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   FolderClock,
+  CalendarClock,
   BellRing,
   Briefcase,
   ShoppingBag,
@@ -30,6 +31,7 @@ const nav: { heading: string; items: { to: string; label: string; icon: typeof L
   {
     heading: 'Compliance',
     items: [
+      { to: '/filings', label: 'Filings', icon: CalendarClock },
       { to: '/documents', label: 'Document Vault', icon: FolderClock },
       { to: '/reminders', label: 'Reminders', icon: BellRing },
     ],

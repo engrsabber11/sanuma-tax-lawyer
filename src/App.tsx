@@ -5,6 +5,7 @@ import { ClientsList } from './pages/clients/ClientsList'
 import { ClientOnboarding } from './pages/clients/ClientOnboarding'
 import { ClientProfile } from './pages/clients/ClientProfile'
 import { DocumentVault } from './pages/documents/DocumentVault'
+import { FilingsPage } from './pages/filings/FilingsPage'
 import { ReminderRulesPage } from './pages/reminders/ReminderRulesPage'
 import { MattersList } from './pages/matters/MattersList'
 import { MatterDetail } from './pages/matters/MatterDetail'
@@ -27,6 +28,7 @@ function App() {
         <Route path="/clients/new" element={<ClientOnboarding />} />
         <Route path="/clients/:id" element={<ClientProfile />} />
 
+        <Route path="/filings" element={<FilingsPage />} />
         <Route path="/documents" element={<DocumentVault />} />
         <Route path="/reminders" element={<ReminderRulesPage />} />
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Search, User, FileText, Receipt, ArrowRight } from 'lucide-react'
+import { Search, User, FileText, Receipt, CalendarClock, ArrowRight } from 'lucide-react'
 import { useData } from '../../data/store'
 
 interface Item {
@@ -13,7 +13,7 @@ interface Item {
 }
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { clients, invoices, clientDocuments, documentTypes } = useData()
+  const { clients, invoices, clientDocuments, documentTypes, filingPeriods, obligationTypes } = useData()
   const [query, setQuery] = useState('')
   const navigate = useNavigate()
 
@@ -36,6 +36,16 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       icon: Receipt,
       to: `/sales/invoices/${inv.id}`,
     }))
+    // Outstanding filings only — the palette is for jumping to live work.
+    const filingItems: Item[] = filingPeriods
+      .filter((p) => p.state === 'pending')
+      .map((p) => ({
+        id: `filing-${p.id}`,
+        title: `${obligationTypes.find((t) => t.id === p.obligationTypeId)?.name ?? 'Filing'} — ${p.label}`,
+        subtitle: clients.find((c) => c.id === p.clientId)?.name ?? '',
+        icon: CalendarClock,
+        to: '/filings',
+      }))
     const docItems: Item[] = clientDocuments.map((d) => ({
       id: `doc-${d.id}`,
       title: `${documentTypes.find((t) => t.id === d.typeId)?.name ?? 'Document'} — ${d.number ?? ''}`,
@@ -43,8 +53,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       icon: FileText,
       to: `/clients/${d.clientId}?tab=documents`,
     }))
-    return [...clientItems, ...invoiceItems, ...docItems]
-  }, [clients, invoices, clientDocuments, documentTypes])
+    return [...clientItems, ...filingItems, ...invoiceItems, ...docItems]
+  }, [clients, invoices, clientDocuments, documentTypes, filingPeriods, obligationTypes])
 
   const filtered = query
     ? items.filter((i) => (i.title + i.subtitle).toLowerCase().includes(query.toLowerCase())).slice(0, 8)
